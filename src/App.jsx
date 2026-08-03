@@ -308,7 +308,7 @@ function TeamRadioPanel({ items, loading, error }) {
     if (!url || captions[i]) return;
     setCaptions((prev) => ({ ...prev, [i]: { loading: true } }));
     fetchRadioCaption(url)
-      .then((data) => setCaptions((prev) => ({ ...prev, [i]: { loading: false, translation: data.translation } })))
+      .then((data) => setCaptions((prev) => ({ ...prev, [i]: { loading: false, turns: data.turns } })))
       .catch(() => setCaptions((prev) => ({ ...prev, [i]: { loading: false, error: true } })));
   }
 
@@ -336,7 +336,7 @@ function TeamRadioPanel({ items, loading, error }) {
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>이 세션엔 공개된 팀 라디오가 없어요.</div>}
           {items.map((r, i) => {
             const caption = captions[i];
-            const captionText = caption?.translation ?? r.text;
+            const turns = caption?.turns;
             return (
               <div key={i} className="px-4 py-3" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
                 <div className="flex items-center gap-2">
@@ -360,8 +360,21 @@ function TeamRadioPanel({ items, loading, error }) {
                   </div>
                 )}
                 {caption?.error && <div className="text-xs pl-8 mt-2" style={{ color: "#E24B4A" }}>자막을 불러오지 못했어요.</div>}
-                {captionText && !caption?.loading && !caption?.error && (
-                  <div className="text-sm pl-8 mt-2" style={{ color: TEXT }}>{captionText}</div>
+                {turns && turns.length > 0 && (
+                  <div className="flex flex-col gap-1.5 pl-8 mt-2">
+                    {turns.map((t, ti) => (
+                      <div key={ti} className="flex items-start gap-2">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0 mt-1.5"
+                          style={{ backgroundColor: t.speaker === "driver" ? "#3BA9F5" : MUTED }}
+                        />
+                        <span className="text-sm" style={{ color: TEXT }}>{t.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!turns && r.text && !caption?.loading && !caption?.error && (
+                  <div className="text-sm pl-8 mt-2" style={{ color: TEXT }}>{r.text}</div>
                 )}
               </div>
             );

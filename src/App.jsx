@@ -104,6 +104,17 @@ function koGpName(name) {
   return GP_NAME_KO[name] || name || "그랑프리";
 }
 
+function contrastIconColor(hex) {
+  if (!hex) return ASPHALT;
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return ASPHALT;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? ASPHALT : "#FFFFFF";
+}
+
 async function fetchJSON(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
@@ -343,10 +354,15 @@ function TeamRadioPanel({ items, loading, error }) {
                   <button
                     onClick={() => toggle(i, r.url)}
                     className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: r.url ? AMBER : LINE, cursor: r.url ? "pointer" : "default" }}
+                    style={{ backgroundColor: r.url ? (r.teamColor || AMBER) : LINE, cursor: r.url ? "pointer" : "default" }}
                     aria-label="재생"
                   >
-                    {playingIdx === i ? <Pause size={12} color={ASPHALT} fill={ASPHALT} /> : <Play size={12} color={r.url ? ASPHALT : MUTED} fill={r.url ? ASPHALT : "none"} />}
+                    {(() => {
+                      const iconColor = r.url ? contrastIconColor(r.teamColor) : MUTED;
+                      return playingIdx === i
+                        ? <Pause size={12} color={iconColor} fill={iconColor} />
+                        : <Play size={12} color={iconColor} fill={r.url ? iconColor : "none"} />;
+                    })()}
                   </button>
                   {r.photo && (
                     <img
@@ -724,7 +740,7 @@ export default function F1CosmosHome() {
           .sort((a, b) => new Date(b.date) - new Date(a.date))
           .map((r) => {
             const drv = driverMap[r.driver_number] || {};
-            return { driver: drv.full_name || String(r.driver_number), team: drv.team_name || "", time: new Date(r.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), url: r.recording_url, photo: drv.headshot_url || null };
+            return { driver: drv.full_name || String(r.driver_number), team: drv.team_name || "", teamColor: drv.team_colour ? `#${drv.team_colour}` : AMBER, time: new Date(r.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), url: r.recording_url, photo: drv.headshot_url || null };
           });
 
         const sortedRaceControl = raceControl

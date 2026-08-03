@@ -27,6 +27,14 @@ const TIRE_COLORS = {
   WET: "#378ADD",
 };
 
+const TIRE_LETTERS = {
+  SOFT: "S",
+  MEDIUM: "M",
+  HARD: "H",
+  INTERMEDIATE: "I",
+  WET: "W",
+};
+
 const GP_NAME_KO = {
   "Bahrain Grand Prix": "바레인 그랑프리",
   "Saudi Arabian Grand Prix": "사우디아라비아 그랑프리",
@@ -88,16 +96,16 @@ const FALLBACK_RACE_SESSIONS = [
 ];
 
 const FALLBACK_ROWS = [
-  { pos: 1, code: "NOR", gap: "--", laps: 70, teamColor: "#F58020", tireColor: TIRE_COLORS.SOFT },
-  { pos: 2, code: "VER", gap: "+15.080s", laps: 70, teamColor: "#3671C6", tireColor: TIRE_COLORS.MEDIUM },
-  { pos: 3, code: "ANT", gap: "+3.648s", laps: 70, teamColor: "#27F4D2", tireColor: TIRE_COLORS.SOFT },
-  { pos: 4, code: "LEC", gap: "+5.112s", laps: 70, teamColor: "#E8002D", tireColor: TIRE_COLORS.SOFT },
-  { pos: 5, code: "HAM", gap: "+0.700s", laps: 70, teamColor: "#E8002D", tireColor: TIRE_COLORS.SOFT },
-  { pos: 6, code: "HAD", gap: "+30.948s", laps: 70, teamColor: "#6C98FF", tireColor: TIRE_COLORS.MEDIUM },
-  { pos: 7, code: "RUS", gap: "+2.015s", laps: 70, teamColor: "#27F4D2", tireColor: TIRE_COLORS.MEDIUM },
-  { pos: 8, code: "LAW", gap: "+54.289s", laps: 70, teamColor: "#6692FF", tireColor: TIRE_COLORS.SOFT },
-  { pos: 9, code: "HUL", gap: "+2.349s", laps: 70, teamColor: "#00E701", tireColor: TIRE_COLORS.SOFT },
-  { pos: 10, code: "LIN", gap: "+20.668s", laps: 70, teamColor: "#00E701", tireColor: TIRE_COLORS.MEDIUM },
+  { pos: 1, code: "NOR", gap: "--", laps: 70, teamColor: "#F58020", tireColor: TIRE_COLORS.SOFT, tireCode: "S" },
+  { pos: 2, code: "VER", gap: "+15.080s", laps: 70, teamColor: "#3671C6", tireColor: TIRE_COLORS.MEDIUM, tireCode: "M" },
+  { pos: 3, code: "ANT", gap: "+3.648s", laps: 70, teamColor: "#27F4D2", tireColor: TIRE_COLORS.SOFT, tireCode: "S" },
+  { pos: 4, code: "LEC", gap: "+5.112s", laps: 70, teamColor: "#E8002D", tireColor: TIRE_COLORS.SOFT, tireCode: "S" },
+  { pos: 5, code: "HAM", gap: "+0.700s", laps: 70, teamColor: "#E8002D", tireColor: TIRE_COLORS.SOFT, tireCode: "S" },
+  { pos: 6, code: "HAD", gap: "+30.948s", laps: 70, teamColor: "#6C98FF", tireColor: TIRE_COLORS.MEDIUM, tireCode: "M" },
+  { pos: 7, code: "RUS", gap: "+2.015s", laps: 70, teamColor: "#27F4D2", tireColor: TIRE_COLORS.MEDIUM, tireCode: "M" },
+  { pos: 8, code: "LAW", gap: "+54.289s", laps: 70, teamColor: "#6692FF", tireColor: TIRE_COLORS.SOFT, tireCode: "S" },
+  { pos: 9, code: "HUL", gap: "+2.349s", laps: 70, teamColor: "#00E701", tireColor: TIRE_COLORS.SOFT, tireCode: "S" },
+  { pos: 10, code: "LIN", gap: "+20.668s", laps: 70, teamColor: "#00E701", tireColor: TIRE_COLORS.MEDIUM, tireCode: "M" },
 ];
 
 const FALLBACK_WEATHER = { air_temperature: 31.3, track_temperature: 47.0, humidity: 26.6, wind_speed: 1.9 };
@@ -562,7 +570,7 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
               sessionData.rows.map((d, i) => (
                 <div key={d.code} className="grid grid-cols-12 px-4 py-3 items-center text-sm" style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
                   <div className="col-span-1" style={{ color: d.pos === 1 ? AMBER : TEXT }}>{d.pos}</div>
-                  <div className="col-span-3 flex items-center gap-2 font-bold" style={{ color: readableAccent(d.teamColor) || TEXT, fontSize: "15px" }}>
+                  <div className="col-span-3 flex items-center gap-2 font-bold" style={{ color: readableAccent(d.teamColor) || TEXT, fontSize: "15px", fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "0.01em" }}>
                     {d.team && (
                       <span
                         className="flex items-center justify-center rounded shrink-0"
@@ -595,7 +603,21 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
                   <div className="col-span-3" style={{ color: MUTED }}>{d.gap}</div>
                   <div className="col-span-3" style={{ color: TEXT }}>{d.laps}</div>
                   <div className="col-span-2">
-                    <Circle size={14} fill={d.tireColor} stroke="none" />
+                    <span
+                      className="flex items-center justify-center rounded-full"
+                      style={{
+                        width: "22px",
+                        height: "22px",
+                        backgroundColor: d.tireColor,
+                        color: contrastIconColor(d.tireColor),
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        fontFamily: "system-ui, -apple-system, sans-serif",
+                        border: `1px solid ${LINE}`,
+                      }}
+                    >
+                      {d.tireCode}
+                    </span>
                   </div>
                 </div>
               ))
@@ -802,6 +824,7 @@ export default function F1CosmosHome() {
               team: drv.team_name || "",
               teamColor: drv.team_colour ? `#${drv.team_colour}` : TEXT,
               tireColor: TIRE_COLORS[compound] || MUTED,
+              tireCode: TIRE_LETTERS[compound] || "?",
               photo: drv.headshot_url || null,
             };
           });

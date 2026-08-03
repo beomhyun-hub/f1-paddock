@@ -78,6 +78,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ transcript, translation });
   } catch (err) {
     console.error("caption-radio error:", err);
-    return res.status(500).json({ error: "자막 생성 중 오류가 발생했습니다." });
+    return res.status(500).json({ error: "자막 생성 중 오류가 발생했습니다.", debug: String(err && err.message) });
   }
 }

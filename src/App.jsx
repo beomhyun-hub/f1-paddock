@@ -289,9 +289,28 @@ function PitStopsPanel({ items, loading, error }) {
   );
 }
 
+async function fetchRadioCaption(url) {
+  const res = await fetch("/api/caption-radio", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error("자막 요청 실패");
+  return res.json();
+}
+
 function TeamRadioPanel({ items, loading, error }) {
   const [playingIdx, setPlayingIdx] = useState(null);
+  const [captions, setCaptions] = useState({});
   const audioRef = useRef(null);
+
+  function loadCaption(i, url) {
+    if (!url || captions[i]) return;
+    setCaptions((prev) => ({ ...prev, [i]: { loading: true } }));
+    fetchRadioCaption(url)
+      .then((data) => setCaptions((prev) => ({ ...prev, [i]: { loading: false, translation: data.translation } })))
+      .catch(() => setCaptions((prev) => ({ ...prev, [i]: { loading: false, error: true } })));
+  }
 
   function toggle(i, url) {
     if (!url) return;
@@ -306,6 +325,7 @@ function TeamRadioPanel({ items, loading, error }) {
     audio.play().catch(() => setPlayingIdx(null));
     audioRef.current = audio;
     setPlayingIdx(i);
+    loadCaption(i, url);
   }
 
   return (
@@ -314,27 +334,40 @@ function TeamRadioPanel({ items, loading, error }) {
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
         <div style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>이 세션엔 공개된 팀 라디오가 없어요.</div>}
-          {items.map((r, i) => (
-            <div key={i} className="px-4 py-3" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => toggle(i, r.url)}
-                  className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: r.url ? AMBER : LINE, cursor: r.url ? "pointer" : "default" }}
-                  aria-label="재생"
-                >
-                  {playingIdx === i ? <Pause size={12} color={ASPHALT} fill={ASPHALT} /> : <Play size={12} color={r.url ? ASPHALT : MUTED} fill={r.url ? ASPHALT : "none"} />}
-                </button>
-                <div>
-                  <div className="text-sm font-medium" style={{ color: TEXT }}>{r.driver}</div>
-                  <div className="text-xs" style={{ color: MUTED }}>{r.team} · {r.time}</div>
+          {items.map((r, i) => {
+            const caption = captions[i];
+            const captionText = caption?.translation ?? r.text;
+            return (
+              <div key={i} className="px-4 py-3" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => toggle(i, r.url)}
+                    className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: r.url ? AMBER : LINE, cursor: r.url ? "pointer" : "default" }}
+                    aria-label="재생"
+                  >
+                    {playingIdx === i ? <Pause size={12} color={ASPHALT} fill={ASPHALT} /> : <Play size={12} color={r.url ? ASPHALT : MUTED} fill={r.url ? ASPHALT : "none"} />}
+                  </button>
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: TEXT }}>{r.driver}</div>
+                    <div className="text-xs" style={{ color: MUTED }}>{r.team} · {r.time}</div>
+                  </div>
                 </div>
+                {caption?.loading && (
+                  <div className="flex items-center gap-1.5 text-xs pl-8 mt-2" style={{ color: MUTED }}>
+                    <Loader2 size={11} className="animate-spin" />
+                    자막 만드는 중...
+                  </div>
+                )}
+                {caption?.error && <div className="text-xs pl-8 mt-2" style={{ color: "#E24B4A" }}>자막을 불러오지 못했어요.</div>}
+                {captionText && !caption?.loading && !caption?.error && (
+                  <div className="text-sm pl-8 mt-2" style={{ color: TEXT }}>{captionText}</div>
+                )}
               </div>
-              {r.text && <div className="text-sm pl-8 mt-2" style={{ color: MUTED }}>{r.text}</div>}
-            </div>
-          ))}
+            );
+          })}
           <div className="px-4 py-2 text-xs" style={{ color: MUTED }}>
-            실제 음성 파일이에요 (재생 버튼을 눌러보세요). 한글 자막은 다음 단계에서 추가할게요.
+            재생 버튼을 누르면 잠시 후 한글 자막이 표시돼요.
           </div>
         </div>
       )}

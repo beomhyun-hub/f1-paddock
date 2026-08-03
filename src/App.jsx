@@ -54,6 +54,29 @@ const GP_NAME_KO = {
   "Abu Dhabi Grand Prix": "아부다비 그랑프리",
 };
 
+const TEAM_ABBR = {
+  "McLaren": "MCL",
+  "Red Bull Racing": "RBR",
+  "Ferrari": "FER",
+  "Mercedes": "MER",
+  "Aston Martin": "AMR",
+  "Alpine": "ALP",
+  "Williams": "WIL",
+  "Racing Bulls": "RB",
+  "Audi": "AUD",
+  "Haas F1 Team": "HAAS",
+  "Cadillac": "CAD",
+  "Sauber": "SAU",
+  "Kick Sauber": "SAU",
+  "Visa Cash App RB": "RB",
+};
+
+function teamAbbr(teamName) {
+  if (!teamName) return "";
+  if (TEAM_ABBR[teamName]) return TEAM_ABBR[teamName];
+  return teamName.split(" ").map((w) => w[0]).join("").slice(0, 4).toUpperCase();
+}
+
 // 아래는 미리보기 화면에서 쓰는 "실제 데이터 스냅샷"이에요.
 // 이 미리보기 환경은 브라우저 보안 정책상 외부 API로 직접 접속할 수 없어서,
 // Claude가 OpenF1에서 직접 확인한 2026 헝가리 그랑프리 실제 결과를 담아뒀어요.
@@ -284,9 +307,20 @@ function PitStopsPanel({ items, loading, error }) {
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>피트 스탑 기록이 없어요.</div>}
           {items.map((p, i) => (
             <div key={i} className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
-              <div>
-                <div className="text-sm font-medium" style={{ color: TEXT }}>{p.code}</div>
-                <div className="text-xs mt-0.5" style={{ color: MUTED }}>{p.team}</div>
+              <div className="flex items-center gap-2">
+                {p.photo && (
+                  <img
+                    src={p.photo}
+                    alt=""
+                    className="w-8 h-8 rounded-full object-cover shrink-0"
+                    style={{ backgroundColor: SURFACE_2 }}
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                )}
+                <div>
+                  <div className="text-sm font-medium" style={{ color: TEXT }}>{p.code}</div>
+                  <div className="text-xs mt-0.5" style={{ color: MUTED }}>{p.team}</div>
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-sm" style={{ color: TEXT, fontFamily: "ui-monospace, monospace" }}>{p.laneTime}</div>
@@ -493,6 +527,23 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
                 <div key={d.code} className="grid grid-cols-12 px-4 py-3 items-center text-sm" style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
                   <div className="col-span-1" style={{ color: d.pos === 1 ? AMBER : TEXT }}>{d.pos}</div>
                   <div className="col-span-3 flex items-center gap-2 font-semibold" style={{ color: d.teamColor || TEXT }}>
+                    {d.team && (
+                      <span
+                        className="flex items-center justify-center rounded shrink-0"
+                        style={{
+                          width: "22px",
+                          height: "16px",
+                          fontSize: "8px",
+                          fontWeight: 700,
+                          letterSpacing: "-0.02em",
+                          backgroundColor: d.teamColor || LINE,
+                          color: contrastIconColor(d.teamColor),
+                        }}
+                        title={d.team}
+                      >
+                        {teamAbbr(d.team)}
+                      </span>
+                    )}
                     {d.photo && (
                       <img
                         src={d.photo}
@@ -709,6 +760,7 @@ export default function F1CosmosHome() {
               code: drv.name_acronym || String(r.driver_number),
               gap: formatGap(r),
               laps: r.number_of_laps ?? "--",
+              team: drv.team_name || "",
               teamColor: drv.team_colour ? `#${drv.team_colour}` : TEXT,
               tireColor: TIRE_COLORS[compound] || MUTED,
               photo: drv.headshot_url || null,
@@ -733,7 +785,7 @@ export default function F1CosmosHome() {
           .sort((a, b) => new Date(b.date) - new Date(a.date))
           .map((p) => {
             const drv = driverMap[p.driver_number] || {};
-            return { code: drv.name_acronym || String(p.driver_number), team: drv.team_name || "", lap: p.lap_number, laneTime: typeof p.pit_duration === "number" ? `${p.pit_duration.toFixed(1)}s` : "--" };
+            return { code: drv.name_acronym || String(p.driver_number), team: drv.team_name || "", lap: p.lap_number, laneTime: typeof p.pit_duration === "number" ? `${p.pit_duration.toFixed(1)}s` : "--", photo: drv.headshot_url || null };
           });
 
         const teamRadio = radio

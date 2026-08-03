@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const MAX_ITEMS = 60;
+const MAX_ITEMS = 200;
 const MAX_CHARS = 300;
 
 const client = new Anthropic();

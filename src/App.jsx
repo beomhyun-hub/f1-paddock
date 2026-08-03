@@ -138,6 +138,42 @@ function contrastIconColor(hex) {
   return luminance > 0.6 ? ASPHALT : "#FFFFFF";
 }
 
+// 팀 컬러 중 일부는 어두운 배경(ASPHALT) 위에서 텍스트로 쓰기엔 너무 어두워서,
+// 명도가 낮으면 흰색 쪽으로 살짝 섞어 최소 가독성을 확보해요.
+function readableAccent(hex) {
+  if (!hex) return TEXT;
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return hex;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  if (luminance >= 0.4) return hex;
+  const mix = 0.55;
+  const nr = Math.round(r + (255 - r) * mix);
+  const ng = Math.round(g + (255 - g) * mix);
+  const nb = Math.round(b + (255 - b) * mix);
+  const toHex = (v) => v.toString(16).padStart(2, "0");
+  return `#${toHex(nr)}${toHex(ng)}${toHex(nb)}`;
+}
+
+// "(BOR)" 같은 3자리 드라이버 코드를 문장 속에서 찾아 해당 팀 컬러로 강조해요.
+function renderRaceControlText(text, colorMap) {
+  if (!colorMap) return text;
+  const parts = text.split(/\(([A-Z]{3})\)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      const color = colorMap[part];
+      return color ? (
+        <span key={i}>(<span style={{ color: readableAccent(color), fontWeight: 700 }}>{part}</span>)</span>
+      ) : (
+        <span key={i}>({part})</span>
+      );
+    }
+    return part;
+  });
+}
+
 async function fetchJSON(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
@@ -274,7 +310,7 @@ function TrackMap() {
   );
 }
 
-function RaceControlPanel({ items, loading, error }) {
+function RaceControlPanel({ items, loading, error, driverColors }) {
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
       <PanelHeader icon={Flag} title="레이스 컨트롤" />
@@ -288,7 +324,7 @@ function RaceControlPanel({ items, loading, error }) {
                 <div className="text-xs mb-1" style={{ color: MUTED }}>
                   {m.time}{m.lap ? ` · ${m.lap}랩` : ""}
                 </div>
-                <div className="text-sm" style={{ color: TEXT }}>{m.text}</div>
+                <div className="text-sm" style={{ color: TEXT }}>{renderRaceControlText(m.text, driverColors)}</div>
               </div>
             </div>
           ))}
@@ -526,16 +562,17 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
               sessionData.rows.map((d, i) => (
                 <div key={d.code} className="grid grid-cols-12 px-4 py-3 items-center text-sm" style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
                   <div className="col-span-1" style={{ color: d.pos === 1 ? AMBER : TEXT }}>{d.pos}</div>
-                  <div className="col-span-3 flex items-center gap-2 font-semibold" style={{ color: d.teamColor || TEXT }}>
+                  <div className="col-span-3 flex items-center gap-2 font-bold" style={{ color: readableAccent(d.teamColor) || TEXT, fontSize: "15px" }}>
                     {d.team && (
                       <span
                         className="flex items-center justify-center rounded shrink-0"
                         style={{
-                          width: "22px",
-                          height: "16px",
-                          fontSize: "8px",
-                          fontWeight: 700,
-                          letterSpacing: "-0.02em",
+                          minWidth: "34px",
+                          height: "20px",
+                          padding: "0 4px",
+                          fontSize: "10px",
+                          fontWeight: 800,
+                          letterSpacing: "0",
                           backgroundColor: d.teamColor || LINE,
                           color: contrastIconColor(d.teamColor),
                         }}
@@ -548,7 +585,7 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
                       <img
                         src={d.photo}
                         alt=""
-                        className="w-6 h-6 rounded-full object-cover shrink-0"
+                        className="w-7 h-7 rounded-full object-cover shrink-0"
                         style={{ backgroundColor: SURFACE_2 }}
                         onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />
@@ -569,7 +606,7 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
         </div>
 
         <div style={{ flex: "1 1 260px", display: "flex", flexDirection: "column", gap: "16px" }}>
-          <RaceControlPanel items={sessionData.raceControl} loading={sessionData.loadingExtras} error={sessionData.extrasError} />
+          <RaceControlPanel items={sessionData.raceControl} loading={sessionData.loadingExtras} error={sessionData.extrasError} driverColors={sessionData.driverColors} />
           <PitStopsPanel items={sessionData.pitStops} loading={sessionData.loadingExtras} error={sessionData.extrasError} />
           <TeamRadioPanel items={sessionData.teamRadio} loading={sessionData.loadingExtras} error={sessionData.extrasError} />
         </div>
@@ -659,7 +696,7 @@ export default function F1CosmosHome() {
   const [selectedSessionKey, setSelectedSessionKey] = useState(FALLBACK_SESSION_KEY);
   const [sessionData, setSessionData] = useState({
     rows: FALLBACK_ROWS, weather: FALLBACK_WEATHER, raceControl: FALLBACK_RACE_CONTROL,
-    pitStops: FALLBACK_PIT_STOPS, teamRadio: FALLBACK_TEAM_RADIO,
+    pitStops: FALLBACK_PIT_STOPS, teamRadio: FALLBACK_TEAM_RADIO, driverColors: {},
     loadingResults: false, resultsError: null, loadingExtras: false, extrasError: null,
   });
 
@@ -737,6 +774,8 @@ export default function F1CosmosHome() {
         const drivers = await fetchJSON(`https://api.openf1.org/v1/drivers?session_key=${selectedSessionKey}`);
         const driverMap = {};
         drivers.forEach((d) => { driverMap[d.driver_number] = d; });
+        const driverColors = {};
+        drivers.forEach((d) => { if (d.name_acronym && d.team_colour) driverColors[d.name_acronym] = `#${d.team_colour}`; });
 
         await sleep(350);
         const results = await fetchJSON(`https://api.openf1.org/v1/session_result?session_key=${selectedSessionKey}`);
@@ -811,9 +850,9 @@ export default function F1CosmosHome() {
         if (cancelled) return;
 
         // 다음에 같은 경기를 다시 고르면 재요청 없이 바로 보여줄 수 있도록 캐시에 저장
-        sessionCache.current[selectedSessionKey] = { rows, weather, pitStops, teamRadio, raceControl: raceControlItems };
+        sessionCache.current[selectedSessionKey] = { rows, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors };
 
-        setSessionData((prev) => ({ ...prev, weather, pitStops, teamRadio, raceControl: raceControlItems, loadingExtras: false }));
+        setSessionData((prev) => ({ ...prev, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, loadingExtras: false }));
       } catch (e) {
         // 요청 제한(429)에 걸렸거나 네트워크 문제일 때: 지금 화면에 보이는 데이터를 그대로 유지해요.
         if (cancelled) return;

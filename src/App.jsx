@@ -110,6 +110,23 @@ async function fetchJSON(url) {
   return res.json();
 }
 
+async function translateBatch(texts) {
+  if (!texts || texts.length === 0) return texts;
+  try {
+    const res = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texts }),
+    });
+    if (!res.ok) throw new Error("번역 요청 실패");
+    const data = await res.json();
+    return data.translations || texts;
+  } catch (e) {
+    // 번역 서버 함수가 없거나 실패하면 원문(영어)을 그대로 보여줘요.
+    return texts;
+  }
+}
+
 function formatRaceTime(sec) {
   if (typeof sec !== "number") return "--";
   const h = Math.floor(sec / 3600);
@@ -228,7 +245,7 @@ function RaceControlPanel({ items, loading, error }) {
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
       <PanelHeader icon={Flag} title="레이스 컨트롤" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
-        <div>
+        <div style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>메시지가 없어요.</div>}
           {items.map((m, i) => (
             <div key={i} className="px-4 py-3 flex gap-2.5" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
@@ -252,7 +269,7 @@ function PitStopsPanel({ items, loading, error }) {
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
       <PanelHeader icon={Timer} title="피트 스탑" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
-        <div>
+        <div style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>피트 스탑 기록이 없어요.</div>}
           {items.map((p, i) => (
             <div key={i} className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
@@ -295,7 +312,7 @@ function TeamRadioPanel({ items, loading, error }) {
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
       <PanelHeader icon={Radio} title="팀 라디오" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
-        <div>
+        <div style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>이 세션엔 공개된 팀 라디오가 없어요.</div>}
           {items.map((r, i) => (
             <div key={i} className="px-4 py-3" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
@@ -631,7 +648,6 @@ export default function F1CosmosHome() {
 
         const pitStops = pit
           .sort((a, b) => new Date(b.date) - new Date(a.date))
-          .slice(0, 5)
           .map((p) => {
             const drv = driverMap[p.driver_number] || {};
             return { code: drv.name_acronym || String(p.driver_number), team: drv.team_name || "", lap: p.lap_number, laneTime: typeof p.pit_duration === "number" ? `${p.pit_duration.toFixed(1)}s` : "--" };
@@ -639,16 +655,23 @@ export default function F1CosmosHome() {
 
         const teamRadio = radio
           .sort((a, b) => new Date(b.date) - new Date(a.date))
-          .slice(0, 5)
           .map((r) => {
             const drv = driverMap[r.driver_number] || {};
             return { driver: drv.full_name || String(r.driver_number), team: drv.team_name || "", time: new Date(r.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), url: r.recording_url };
           });
 
-        const raceControlItems = raceControl
-          .sort((a, b) => new Date(b.date) - new Date(a.date))
-          .slice(0, 6)
-          .map((m) => ({ time: new Date(m.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), lap: m.lap_number, text: m.message }));
+        const sortedRaceControl = raceControl
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        // 레이스 컨트롤 메시지는 매번 내용이 달라서 미리 사전을 만들 수 없어요.
+        // 그래서 이 부분만 AI(Claude)에게 자연스러운 한국어 번역을 맡겨요.
+        const translatedMessages = await translateBatch(sortedRaceControl.map((m) => m.message));
+
+        const raceControlItems = sortedRaceControl.map((m, i) => ({
+          time: new Date(m.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
+          lap: m.lap_number,
+          text: translatedMessages[i] || m.message,
+        }));
 
         if (cancelled) return;
 

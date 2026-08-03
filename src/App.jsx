@@ -348,6 +348,15 @@ function TeamRadioPanel({ items, loading, error }) {
                   >
                     {playingIdx === i ? <Pause size={12} color={ASPHALT} fill={ASPHALT} /> : <Play size={12} color={r.url ? ASPHALT : MUTED} fill={r.url ? ASPHALT : "none"} />}
                   </button>
+                  {r.photo && (
+                    <img
+                      src={r.photo}
+                      alt=""
+                      className="w-8 h-8 rounded-full object-cover shrink-0"
+                      style={{ backgroundColor: SURFACE_2 }}
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
+                  )}
                   <div>
                     <div className="text-sm font-medium" style={{ color: TEXT }}>{r.driver}</div>
                     <div className="text-xs" style={{ color: MUTED }}>{r.team} · {r.time}</div>
@@ -467,7 +476,18 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
               sessionData.rows.map((d, i) => (
                 <div key={d.code} className="grid grid-cols-12 px-4 py-3 items-center text-sm" style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
                   <div className="col-span-1" style={{ color: d.pos === 1 ? AMBER : TEXT }}>{d.pos}</div>
-                  <div className="col-span-3 font-semibold" style={{ color: d.teamColor || TEXT }}>{d.code}</div>
+                  <div className="col-span-3 flex items-center gap-2 font-semibold" style={{ color: d.teamColor || TEXT }}>
+                    {d.photo && (
+                      <img
+                        src={d.photo}
+                        alt=""
+                        className="w-6 h-6 rounded-full object-cover shrink-0"
+                        style={{ backgroundColor: SURFACE_2 }}
+                        onError={(e) => { e.currentTarget.style.display = "none"; }}
+                      />
+                    )}
+                    {d.code}
+                  </div>
                   <div className="col-span-3" style={{ color: MUTED }}>{d.gap}</div>
                   <div className="col-span-3" style={{ color: TEXT }}>{d.laps}</div>
                   <div className="col-span-2">
@@ -675,6 +695,7 @@ export default function F1CosmosHome() {
               laps: r.number_of_laps ?? "--",
               teamColor: drv.team_colour ? `#${drv.team_colour}` : TEXT,
               tireColor: TIRE_COLORS[compound] || MUTED,
+              photo: drv.headshot_url || null,
             };
           });
 
@@ -703,7 +724,7 @@ export default function F1CosmosHome() {
           .sort((a, b) => new Date(b.date) - new Date(a.date))
           .map((r) => {
             const drv = driverMap[r.driver_number] || {};
-            return { driver: drv.full_name || String(r.driver_number), team: drv.team_name || "", time: new Date(r.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), url: r.recording_url };
+            return { driver: drv.full_name || String(r.driver_number), team: drv.team_name || "", time: new Date(r.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), url: r.recording_url, photo: drv.headshot_url || null };
           });
 
         const sortedRaceControl = raceControl

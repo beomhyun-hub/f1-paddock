@@ -36,7 +36,6 @@ export default async function handler(req, res) {
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       output_config: {
-        effort: "low",
         format: {
           type: "json_schema",
           schema: {

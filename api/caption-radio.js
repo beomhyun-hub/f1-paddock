@@ -40,7 +40,6 @@ async function translateTranscript(transcript) {
   const response = await client.messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 512,
-    output_config: { effort: "low" },
     system: `당신은 F1 팀 라디오 무전 내용을 한국어로 번역하는 전문가입니다.
 드라이버와 엔지니어 사이의 실제 무전 대화이므로, 딱딱한 직역이 아니라 실제 사람이 무전으로 말하는 듯한 자연스럽고 간결한 한국어로 번역하세요.
 드라이버 이름, 팀명, 숫자(랩, 순위, 타이어 등)는 원문 의미를 그대로 유지하세요.

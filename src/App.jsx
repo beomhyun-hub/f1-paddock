@@ -245,7 +245,7 @@ function RaceControlPanel({ items, loading, error }) {
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
       <PanelHeader icon={Flag} title="레이스 컨트롤" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
-        <div style={{ maxHeight: "280px", overflowY: "auto" }}>
+        <div className="scroll-panel" style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>메시지가 없어요.</div>}
           {items.map((m, i) => (
             <div key={i} className="px-4 py-3 flex gap-2.5" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
@@ -269,7 +269,7 @@ function PitStopsPanel({ items, loading, error }) {
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
       <PanelHeader icon={Timer} title="피트 스탑" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
-        <div style={{ maxHeight: "280px", overflowY: "auto" }}>
+        <div className="scroll-panel" style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>피트 스탑 기록이 없어요.</div>}
           {items.map((p, i) => (
             <div key={i} className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
@@ -332,7 +332,7 @@ function TeamRadioPanel({ items, loading, error }) {
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
       <PanelHeader icon={Radio} title="팀 라디오" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
-        <div style={{ maxHeight: "280px", overflowY: "auto" }}>
+        <div className="scroll-panel" style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>이 세션엔 공개된 팀 라디오가 없어요.</div>}
           {items.map((r, i) => {
             const caption = captions[i];

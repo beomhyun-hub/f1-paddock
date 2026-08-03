@@ -517,6 +517,17 @@ export default function F1CosmosHome() {
   const [loadingUpcoming, setLoadingUpcoming] = useState(false);
   const [upcomingError, setUpcomingError] = useState(null);
 
+  const sessionCache = useRef({
+    [FALLBACK_SESSION_KEY]: {
+      rows: FALLBACK_ROWS, weather: FALLBACK_WEATHER, raceControl: FALLBACK_RACE_CONTROL,
+      pitStops: FALLBACK_PIT_STOPS, teamRadio: FALLBACK_TEAM_RADIO,
+    },
+  });
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   useEffect(() => {
     async function loadCalendar() {
       try {
@@ -559,18 +570,29 @@ export default function F1CosmosHome() {
   useEffect(() => {
     if (!selectedSessionKey) return;
 
+    // 이미 가져온 적 있는 경기라면 다시 요청하지 않고 캐시에서 바로 보여줘요.
+    if (sessionCache.current[selectedSessionKey]) {
+      setSessionData((prev) => ({ ...prev, ...sessionCache.current[selectedSessionKey], loadingResults: false, loadingExtras: false, resultsError: null, extrasError: null }));
+      return;
+    }
+
+    let cancelled = false;
+
     async function loadSession() {
       setSessionData((prev) => ({ ...prev, loadingResults: true, loadingExtras: true, resultsError: null, extrasError: null }));
 
       try {
+        // OpenF1 무료 티어는 초당 3회/분당 30회 제한이 있어서, 한꺼번에 몰아서 요청하지 않고
+        // 하나씩 순서대로, 사이사이 살짝 텀을 두고 가져와요.
         const drivers = await fetchJSON(`https://api.openf1.org/v1/drivers?session_key=${selectedSessionKey}`);
         const driverMap = {};
         drivers.forEach((d) => { driverMap[d.driver_number] = d; });
 
-        const [results, stints] = await Promise.all([
-          fetchJSON(`https://api.openf1.org/v1/session_result?session_key=${selectedSessionKey}`),
-          fetchJSON(`https://api.openf1.org/v1/stints?session_key=${selectedSessionKey}`),
-        ]);
+        await sleep(350);
+        const results = await fetchJSON(`https://api.openf1.org/v1/session_result?session_key=${selectedSessionKey}`);
+
+        await sleep(350);
+        const stints = await fetchJSON(`https://api.openf1.org/v1/stints?session_key=${selectedSessionKey}`);
 
         const lastCompound = {};
         stints.forEach((s) => {
@@ -593,14 +615,17 @@ export default function F1CosmosHome() {
             };
           });
 
+        if (cancelled) return;
         setSessionData((prev) => ({ ...prev, rows, loadingResults: false }));
 
-        const [weatherArr, pit, radio, raceControl] = await Promise.all([
-          fetchJSON(`https://api.openf1.org/v1/weather?session_key=${selectedSessionKey}`),
-          fetchJSON(`https://api.openf1.org/v1/pit?session_key=${selectedSessionKey}`),
-          fetchJSON(`https://api.openf1.org/v1/team_radio?session_key=${selectedSessionKey}`),
-          fetchJSON(`https://api.openf1.org/v1/race_control?session_key=${selectedSessionKey}`),
-        ]);
+        await sleep(350);
+        const weatherArr = await fetchJSON(`https://api.openf1.org/v1/weather?session_key=${selectedSessionKey}`);
+        await sleep(350);
+        const pit = await fetchJSON(`https://api.openf1.org/v1/pit?session_key=${selectedSessionKey}`);
+        await sleep(350);
+        const radio = await fetchJSON(`https://api.openf1.org/v1/team_radio?session_key=${selectedSessionKey}`);
+        await sleep(350);
+        const raceControl = await fetchJSON(`https://api.openf1.org/v1/race_control?session_key=${selectedSessionKey}`);
 
         const weather = weatherArr.length > 0 ? weatherArr[weatherArr.length - 1] : null;
 
@@ -625,14 +650,20 @@ export default function F1CosmosHome() {
           .slice(0, 6)
           .map((m) => ({ time: new Date(m.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), lap: m.lap_number, text: m.message }));
 
+        if (cancelled) return;
+
+        // 다음에 같은 경기를 다시 고르면 재요청 없이 바로 보여줄 수 있도록 캐시에 저장
+        sessionCache.current[selectedSessionKey] = { rows, weather, pitStops, teamRadio, raceControl: raceControlItems };
+
         setSessionData((prev) => ({ ...prev, weather, pitStops, teamRadio, raceControl: raceControlItems, loadingExtras: false }));
       } catch (e) {
-        // 이 미리보기 환경에서는 외부 API 접속이 막혀 있어서 실패하는 게 정상이에요.
-        // 이미 표시 중인 데이터(실제 데이터 스냅샷)를 그대로 유지해요.
+        // 요청 제한(429)에 걸렸거나 네트워크 문제일 때: 지금 화면에 보이는 데이터를 그대로 유지해요.
+        if (cancelled) return;
         setSessionData((prev) => ({ ...prev, loadingResults: false, loadingExtras: false }));
       }
     }
     loadSession();
+    return () => { cancelled = true; };
   }, [selectedSessionKey]);
 
   return (

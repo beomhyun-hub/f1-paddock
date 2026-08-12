@@ -182,10 +182,19 @@ function renderRaceControlText(text, colorMap) {
   });
 }
 
-async function fetchJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`요청 실패 (${res.status})`);
-  return res.json();
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// OpenF1 무료 티어는 초당 3회/분당 30회 제한이 있어요. 개발 모드의 StrictMode처럼
+// 요청이 몰리는 상황에선 429가 나기 쉬워서, 429일 때만 잠깐 쉬었다가 다시 시도해요.
+async function fetchJSON(url, retries = 3) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) return res.json();
+    if (res.status !== 429 || attempt >= retries) throw new Error(`요청 실패 (${res.status})`);
+    await sleep(1500 * (attempt + 1) ** 2);
+  }
 }
 
 async function translateBatch(texts) {
@@ -288,32 +297,373 @@ function PanelHeader({ icon: Icon, title }) {
   );
 }
 
-function TrackMap() {
-  const dots = [
-    { code: "P1", x: 300, y: 30 },
-    { code: "P2", x: 420, y: 55 },
-    { code: "P3", x: 480, y: 130 },
-    { code: "P4", x: 430, y: 210 },
-    { code: "P5", x: 320, y: 250 },
+// --- 트랙맵 ------------------------------------------------------------------
+// OpenF1 /v1/location 은 드라이버별 x, y 좌표를 초당 4회 정도 내려줘요.
+// 전체 드라이버 × 1랩이 약 1MB라서 레이스 전체(약 57MB)를 한 번에 받는 건 무리예요.
+// 그래서 "랩 하나"를 단위로 필요할 때만 받아오고, 한 번 받은 랩은 캐시에 남겨둡니다.
+
+const TRACK_MAX_W = 560;
+const TRACK_MAX_H = 300;
+const TRACK_PAD = 26;
+
+// 좌표는 위경도가 아니라 서킷마다 제각각인 임의 단위라, 받아온 점들의 경계 상자를
+// 기준으로 viewBox에 맞춰 넣어요. 가로세로 비율은 그대로 두고(찌그러짐 방지),
+// viewBox 자체를 트랙 비율에 맞게 잡아서 헝가로링처럼 세로로 긴 서킷도 양옆이 비지 않게 합니다.
+// SVG는 y가 아래로 증가하니 y축은 뒤집습니다.
+function makeProjection(points) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const spanX = maxX - minX || 1;
+  const spanY = maxY - minY || 1;
+  const scale = Math.min((TRACK_MAX_W - TRACK_PAD * 2) / spanX, (TRACK_MAX_H - TRACK_PAD * 2) / spanY);
+  const width = spanX * scale + TRACK_PAD * 2;
+  const height = spanY * scale + TRACK_PAD * 2;
+  const project = (x, y) => [
+    (x - minX) * scale + TRACK_PAD,
+    height - ((y - minY) * scale + TRACK_PAD),
   ];
+  return { project, width, height };
+}
+
+// (0, 0)은 신호가 끊긴 구간에 들어오는 값이라 버려요.
+function cleanLocations(raw) {
+  return raw.filter((p) => typeof p.x === "number" && typeof p.y === "number" && !(p.x === 0 && p.y === 0));
+}
+
+// 좌표 피드는 서킷/세션에 따라 갱신 간격이 크게 달라요. 초당 4회로 내려오지만 같은 값이
+// 반복되는 경우가 있어서(헝가로링은 한 랩에 실제로 26개 지점), 연속으로 같은 좌표는 하나로 합쳐요.
+// 값이 바뀐 첫 시점을 남겨야 뒤에서 시간 보간이 맞습니다.
+function dedupeConsecutive(points) {
+  const out = [];
+  points.forEach((p) => {
+    const prev = out[out.length - 1];
+    if (!prev || prev.x !== p.x || prev.y !== p.y) out.push(p);
+  });
+  return out;
+}
+
+// 너무 가까이 붙은 점은 빼요. 간격이 들쭉날쭉하면 곡선이 튀면서 트랙에 매듭이 생겨요.
+function thinPoints(pts, minGap) {
+  const out = [];
+  pts.forEach((p) => {
+    const prev = out[out.length - 1];
+    if (!prev || Math.hypot(p[0] - prev[0], p[1] - prev[1]) >= minGap) out.push(p);
+  });
+  // 닫힌 곡선이라 마지막 점이 첫 점과 겹치면 이음매가 접혀요.
+  while (out.length > 2 && Math.hypot(out[out.length - 1][0] - out[0][0], out[out.length - 1][1] - out[0][1]) < minGap) out.pop();
+  return out;
+}
+
+// 성긴 점을 직선으로 이으면 트랙이 각진 다각형으로 보여요.
+// 균등(uniform) Catmull-Rom은 점 간격이 고르지 않으면 곡선이 밖으로 튀어서,
+// 간격을 반영하는 centripetal(alpha=0.5) 방식으로 3차 베지에 제어점을 만듭니다.
+function closedSplinePath(rawPts) {
+  const pts = thinPoints(rawPts, 3);
+  if (pts.length < 4) return "";
+  const at = (i) => pts[(i + pts.length) % pts.length];
+  const fmt = (v) => v.toFixed(1);
+  const dist = (a, b) => Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 1e-4) ** 0.5;
+
+  let d = `M ${fmt(pts[0][0])} ${fmt(pts[0][1])}`;
+  for (let i = 0; i < pts.length; i++) {
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    const d1 = dist(p0, p1), d2 = dist(p1, p2), d3 = dist(p2, p3);
+    const c1 = [0, 1].map((k) =>
+      (d1 * d1 * p2[k] - d2 * d2 * p0[k] + (2 * d1 * d1 + 3 * d1 * d2 + d2 * d2) * p1[k]) / (3 * d1 * (d1 + d2))
+    );
+    const c2 = [0, 1].map((k) =>
+      (d3 * d3 * p1[k] - d2 * d2 * p3[k] + (2 * d3 * d3 + 3 * d3 * d2 + d2 * d2) * p2[k]) / (3 * d3 * (d3 + d2))
+    );
+    d += ` C ${fmt(c1[0])} ${fmt(c1[1])}, ${fmt(c2[0])} ${fmt(c2[1])}, ${fmt(p2[0])} ${fmt(p2[1])}`;
+  }
+  return `${d} Z`;
+}
+
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+}
+
+function toApiDate(d) {
+  return d.toISOString().slice(0, -1);
+}
+
+function lapWindow(lap) {
+  const start = new Date(lap.date_start);
+  const end = new Date(start.getTime() + lap.lap_duration * 1000);
+  return { start, end, durationMs: lap.lap_duration * 1000 };
+}
+
+// 샘플 사이를 스플라인으로 채워서, 성긴 좌표를 부드럽게 움직이는 점으로 만들어요.
+function positionAt(track, ms) {
+  if (track.length === 0) return null;
+  if (track.length < 4) return track[0];
+  if (ms <= track[0].t) return track[0];
+  if (ms >= track[track.length - 1].t) return track[track.length - 1];
+
+  let lo = 0, hi = track.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (track[mid].t <= ms) lo = mid; else hi = mid;
+  }
+  const at = (i) => track[Math.max(0, Math.min(track.length - 1, i))];
+  const a = at(lo), b = at(lo + 1);
+  const span = b.t - a.t;
+  const f = span > 0 ? (ms - a.t) / span : 0;
+  const p0 = at(lo - 1), p3 = at(lo + 2);
+  return {
+    x: catmullRom(p0.x, a.x, b.x, p3.x, f),
+    y: catmullRom(p0.y, a.y, b.y, p3.y, f),
+  };
+}
+
+function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
+  const [laps, setLaps] = useState([]);
+  const [lapNumber, setLapNumber] = useState(null);
+  const [outline, setOutline] = useState(null);
+  const [tracks, setTracks] = useState(null);
+  const [durationMs, setDurationMs] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [loadingLap, setLoadingLap] = useState(false);
+  const [error, setError] = useState(null);
+  const [lapOpen, setLapOpen] = useState(false);
+
+  const lapCache = useRef({});
+  const rafRef = useRef(null);
+
+  // 세션이 바뀌면 랩 목록과 서킷 윤곽선을 새로 받아요.
+  // 윤곽선은 리더의 가장 빠른 랩(피트 아웃 랩 제외)을 쓰면 트랙 모양이 가장 깨끗하게 나와요.
+  useEffect(() => {
+    if (!sessionKey || !leaderNumber) return;
+    let cancelled = false;
+    lapCache.current = {};
+    setLaps([]); setLapNumber(null); setOutline(null); setTracks(null);
+    setPlaying(false); setElapsed(0); setError(null);
+
+    async function loadTrack() {
+      try {
+        // 순위표·날씨·라디오 요청이 먼저 끝나도록 잠깐 양보해요. 트랙맵은 조금 늦게 떠도 괜찮아요.
+        await sleep(2500);
+        if (cancelled) return;
+
+        const all = await fetchJSON(`https://api.openf1.org/v1/laps?session_key=${sessionKey}&driver_number=${leaderNumber}`);
+        const usable = all.filter((l) => l.date_start && typeof l.lap_duration === "number");
+        if (cancelled || usable.length === 0) return;
+
+        setLaps(usable);
+        setLapNumber(usable[usable.length - 1].lap_number);
+
+        const clean = usable.filter((l) => !l.is_pit_out_lap);
+        const reference = (clean.length > 0 ? clean : usable).slice().sort((a, b) => a.lap_duration - b.lap_duration)[0];
+        const { start, end } = lapWindow(reference);
+
+        await sleep(400);
+        const raw = await fetchJSON(
+          `https://api.openf1.org/v1/location?session_key=${sessionKey}&driver_number=${leaderNumber}` +
+          `&date%3E${toApiDate(start)}&date%3C${toApiDate(end)}`
+        );
+        if (cancelled) return;
+
+        const pts = dedupeConsecutive(cleanLocations(raw));
+        if (pts.length < 8) return;
+        const { project, width, height } = makeProjection(pts);
+        const d = closedSplinePath(pts.map((p) => project(p.x, p.y)));
+        if (!d) return;
+        setOutline({ d, project, width, height });
+      } catch (e) {
+        if (!cancelled) setError("트랙 좌표를 불러오지 못했어요.");
+      }
+    }
+    loadTrack();
+    return () => { cancelled = true; };
+  }, [sessionKey, leaderNumber]);
+
+  // 선택한 랩의 전체 드라이버 좌표(약 1MB, 요청 1번). 이미 본 랩은 캐시에서 꺼내 씁니다.
+  useEffect(() => {
+    if (!lapNumber || laps.length === 0) return;
+    const lap = laps.find((l) => l.lap_number === lapNumber);
+    if (!lap) return;
+
+    let cancelled = false;
+    setPlaying(false);
+    setElapsed(0);
+
+    const cached = lapCache.current[lapNumber];
+    if (cached) {
+      setTracks(cached.tracks);
+      setDurationMs(cached.durationMs);
+      return;
+    }
+
+    async function loadLap() {
+      setLoadingLap(true);
+      setError(null);
+      try {
+        const { start, end, durationMs: dur } = lapWindow(lap);
+        const raw = await fetchJSON(
+          `https://api.openf1.org/v1/location?session_key=${sessionKey}` +
+          `&date%3E${toApiDate(start)}&date%3C${toApiDate(end)}`
+        );
+        if (cancelled) return;
+
+        const base = start.getTime();
+        const grouped = {};
+        cleanLocations(raw).forEach((p) => {
+          (grouped[p.driver_number] ||= []).push({ t: new Date(p.date).getTime() - base, x: p.x, y: p.y });
+        });
+        Object.keys(grouped).forEach((num) => {
+          grouped[num].sort((a, b) => a.t - b.t);
+          grouped[num] = dedupeConsecutive(grouped[num]);
+        });
+
+        lapCache.current[lapNumber] = { tracks: grouped, durationMs: dur };
+        setTracks(grouped);
+        setDurationMs(dur);
+      } catch (e) {
+        if (!cancelled) setError("랩 데이터를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.");
+      } finally {
+        if (!cancelled) setLoadingLap(false);
+      }
+    }
+    loadLap();
+    return () => { cancelled = true; };
+  }, [lapNumber, laps, sessionKey]);
+
+  // 실제 속도(1배속)로 재생해요.
+  useEffect(() => {
+    if (!playing || durationMs === 0) return;
+    let last = performance.now();
+    const step = (now) => {
+      // 다른 탭에 가 있는 동안엔 rAF가 멈춰요. 돌아왔을 때 그 시간만큼 한 번에 건너뛰지 않도록
+      // 프레임 간격에 상한을 둡니다.
+      const delta = Math.min(now - last, 100);
+      last = now;
+      setElapsed((prev) => {
+        const next = prev + delta;
+        if (next >= durationMs) { setPlaying(false); return durationMs; }
+        return next;
+      });
+      rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [playing, durationMs]);
+
+  const project = outline?.project;
+  const dots = [];
+  if (project && tracks) {
+    Object.entries(tracks).forEach(([num, track]) => {
+      const pos = positionAt(track, elapsed);
+      if (!pos) return;
+      const info = driversByNumber?.[num] || {};
+      const [cx, cy] = project(pos.x, pos.y);
+      dots.push({ num, cx, cy, code: info.code || num, color: info.color || AMBER });
+    });
+  }
+
+  const currentLap = laps.find((l) => l.lap_number === lapNumber);
+  const ready = outline && tracks;
+
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
-      <PanelHeader icon={MapPin} title="트랙맵 (예시)" />
-      <div className="p-4">
-        <svg viewBox="0 0 560 280" className="w-full h-auto">
-          <path d="M 60 30 L 460 30 Q 520 30 520 90 L 520 150 Q 520 190 480 190 L 380 190 Q 340 190 340 230 L 340 250 Q 340 270 300 270 L 100 270 Q 40 270 40 210 L 40 90 Q 40 30 60 30 Z" fill="none" stroke={LINE} strokeWidth="14" />
-          <path d="M 60 30 L 460 30 Q 520 30 520 90 L 520 150 Q 520 190 480 190 L 380 190 Q 340 190 340 230 L 340 250 Q 340 270 300 270 L 100 270 Q 40 270 40 210 L 40 90 Q 40 30 60 30 Z" fill="none" stroke={SURFACE_2} strokeWidth="10" />
-          {dots.map((p) => (
-            <g key={p.code}>
-              <circle cx={p.x} cy={p.y} r="9" fill={AMBER} />
-              <text x={p.x} y={p.y - 15} textAnchor="middle" fontSize="11" fontWeight="600" fill={TEXT} fontFamily="ui-monospace, monospace">{p.code}</text>
-            </g>
-          ))}
-        </svg>
-        <div className="text-xs mt-2" style={{ color: MUTED }}>
-          실제 좌표 데이터는 다음 단계에서 연결 예정이에요.
+      <PanelHeader icon={MapPin} title="트랙맵" />
+
+      <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: `1px solid ${LINE}` }}>
+        <div className="relative">
+          <button
+            onClick={() => setLapOpen((v) => !v)}
+            disabled={laps.length === 0}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md font-medium"
+            style={{ color: laps.length === 0 ? MUTED : TEXT, border: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}
+          >
+            {lapNumber ? `${lapNumber}랩` : "랩 선택"}
+            <ChevronDown size={14} />
+          </button>
+          {lapOpen && (
+            <div className="absolute left-0 mt-1 w-40 rounded-md overflow-hidden z-10 max-h-64 overflow-y-auto" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
+              {laps.map((l) => (
+                <button
+                  key={l.lap_number}
+                  onClick={() => { setLapNumber(l.lap_number); setLapOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm flex items-center justify-between"
+                  style={{ color: l.lap_number === lapNumber ? AMBER : TEXT, borderBottom: `1px solid ${LINE}` }}
+                >
+                  <span>{l.lap_number}랩</span>
+                  <span className="text-xs" style={{ color: MUTED }}>
+                    {lapCache.current[l.lap_number] ? "●" : ""} {l.lap_duration.toFixed(1)}s
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
+        <button
+          onClick={() => {
+            if (elapsed >= durationMs) setElapsed(0);
+            setPlaying((v) => !v);
+          }}
+          disabled={!ready}
+          className="flex items-center justify-center rounded-md shrink-0"
+          style={{ width: "32px", height: "32px", border: `1px solid ${LINE}`, backgroundColor: SURFACE_2, opacity: ready ? 1 : 0.4 }}
+          aria-label={playing ? "일시정지" : "재생"}
+        >
+          {playing
+            ? <Pause size={13} color={AMBER} fill={AMBER} />
+            : <Play size={13} color={AMBER} fill={AMBER} />}
+        </button>
+
+        <input
+          type="range"
+          min={0}
+          max={durationMs || 1}
+          value={elapsed}
+          disabled={!ready}
+          onChange={(e) => { setPlaying(false); setElapsed(Number(e.target.value)); }}
+          className="flex-1"
+          style={{ accentColor: AMBER, minWidth: "120px" }}
+        />
+
+        <span className="text-xs shrink-0" style={{ color: MUTED, fontFamily: "ui-monospace, monospace" }}>
+          {(elapsed / 1000).toFixed(1)}s / {currentLap ? currentLap.lap_duration.toFixed(1) : "--"}s
+        </span>
       </div>
+
+      {error && <ErrorBlock message={error} />}
+
+      {!error && !sessionKey ? (
+        <div className="px-4 py-8 text-sm text-center" style={{ color: MUTED }}>세션을 먼저 선택해 주세요.</div>
+      ) : !error && !leaderNumber ? (
+        <div className="px-4 py-8 text-sm text-center" style={{ color: MUTED }}>이 세션은 좌표 데이터를 쓸 수 없어요.</div>
+      ) : !error && !outline ? <LoadingBlock label="트랙 좌표를 불러오는 중..." /> : !error && (
+        <div className="p-4">
+          <svg viewBox={`0 0 ${outline.width.toFixed(0)} ${outline.height.toFixed(0)}`} className="w-full h-auto" style={{ maxHeight: "340px" }}>
+            <path d={outline.d} fill="none" stroke={LINE} strokeWidth="14" strokeLinejoin="round" strokeLinecap="round" />
+            <path d={outline.d} fill="none" stroke={SURFACE_2} strokeWidth="10" strokeLinejoin="round" strokeLinecap="round" />
+            {dots.map((p) => (
+              <g key={p.num}>
+                <circle cx={p.cx} cy={p.cy} r="7" fill={p.color} stroke={ASPHALT} strokeWidth="1.5" />
+                <text x={p.cx} y={p.cy - 11} textAnchor="middle" fontSize="10" fontWeight="700" fill={readableAccent(p.color) || TEXT} fontFamily="ui-monospace, monospace">{p.code}</text>
+              </g>
+            ))}
+          </svg>
+          {loadingLap && (
+            <div className="flex items-center gap-2 text-xs mt-2" style={{ color: MUTED }}>
+              <Loader2 size={11} className="animate-spin" />
+              {lapNumber}랩 좌표를 불러오는 중... (약 1MB)
+            </div>
+          )}
+          {!loadingLap && (
+            <div className="text-xs mt-2" style={{ color: MUTED }}>
+              랩을 고르면 그 랩 동안의 실제 주행 좌표가 재생돼요. 한 번 본 랩은 다시 받지 않아요.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -624,7 +974,11 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
             )}
           </div>
 
-          <TrackMap />
+          <TrackMap
+            sessionKey={selectedSessionKey}
+            leaderNumber={sessionData.rows.find((r) => r.pos === 1)?.num}
+            driversByNumber={sessionData.driversByNumber}
+          />
         </div>
 
         <div style={{ flex: "1 1 260px", display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -733,10 +1087,6 @@ export default function F1CosmosHome() {
     },
   });
 
-  function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   useEffect(() => {
     async function loadCalendar() {
       try {
@@ -799,6 +1149,15 @@ export default function F1CosmosHome() {
         const driverColors = {};
         drivers.forEach((d) => { if (d.name_acronym && d.team_colour) driverColors[d.name_acronym] = `#${d.team_colour}`; });
 
+        // 트랙맵에서 좌표 데이터(driver_number 기준)를 드라이버 코드/팀 컬러로 이어주기 위한 표
+        const driversByNumber = {};
+        drivers.forEach((d) => {
+          driversByNumber[d.driver_number] = {
+            code: d.name_acronym || String(d.driver_number),
+            color: d.team_colour ? `#${d.team_colour}` : AMBER,
+          };
+        });
+
         await sleep(350);
         const results = await fetchJSON(`https://api.openf1.org/v1/session_result?session_key=${selectedSessionKey}`);
 
@@ -818,6 +1177,7 @@ export default function F1CosmosHome() {
             const compound = lastCompound[r.driver_number]?.compound?.toUpperCase();
             return {
               pos: r.position,
+              num: r.driver_number,
               code: drv.name_acronym || String(r.driver_number),
               gap: formatGap(r),
               laps: r.number_of_laps ?? "--",
@@ -830,7 +1190,7 @@ export default function F1CosmosHome() {
           });
 
         if (cancelled) return;
-        setSessionData((prev) => ({ ...prev, rows, loadingResults: false }));
+        setSessionData((prev) => ({ ...prev, rows, driversByNumber, loadingResults: false }));
 
         await sleep(350);
         const weatherArr = await fetchJSON(`https://api.openf1.org/v1/weather?session_key=${selectedSessionKey}`);
@@ -873,9 +1233,9 @@ export default function F1CosmosHome() {
         if (cancelled) return;
 
         // 다음에 같은 경기를 다시 고르면 재요청 없이 바로 보여줄 수 있도록 캐시에 저장
-        sessionCache.current[selectedSessionKey] = { rows, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors };
+        sessionCache.current[selectedSessionKey] = { rows, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, driversByNumber };
 
-        setSessionData((prev) => ({ ...prev, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, loadingExtras: false }));
+        setSessionData((prev) => ({ ...prev, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, driversByNumber, loadingExtras: false }));
       } catch (e) {
         // 요청 제한(429)에 걸렸거나 네트워크 문제일 때: 지금 화면에 보이는 데이터를 그대로 유지해요.
         if (cancelled) return;

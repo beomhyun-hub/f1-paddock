@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Zap, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, ChevronLeft, ChevronRight, History,
+  Zap, Ticket, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, ChevronLeft, ChevronRight, History,
   ArrowLeft, Thermometer, Droplets, Wind, Flag, Radio, Play, Pause, Info,
   Timer, Loader2, AlertCircle,
 } from "lucide-react";
@@ -1726,7 +1726,8 @@ export default function F1CosmosHome() {
       <header className="flex items-center justify-between px-6 py-4 flex-wrap gap-4" style={{ borderBottom: `1px solid ${LINE}` }}>
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: ACCENT }}>
-            <Zap size={16} color={ASPHALT} strokeWidth={2.5} />
+            {/* 패독 패스. 패독은 패스가 있어야 들어가는 구역이라 이 사이트의 시선과도 맞아요. */}
+            <Ticket size={16} color={ASPHALT} strokeWidth={2.5} />
           </div>
           <span className="font-bold text-base tracking-wide" style={{ color: TEXT, letterSpacing: "0.02em" }}>
             F1 <span style={{ color: ACCENT }}>패독</span>

@@ -8,7 +8,7 @@ import {
 const ASPHALT = "#0B0C10";
 const SURFACE = "#16181D";
 const SURFACE_2 = "#1D2027";
-const AMBER = "#F5A623";
+const ACCENT = "#A78BFA";
 const TEXT = "#E8E6E1";
 const MUTED = "#8B8D92";
 const LINE = "#2A2D34";
@@ -300,7 +300,7 @@ function WeatherBar({ weather }) {
 function PanelHeader({ icon: Icon, title }) {
   return (
     <div className="flex items-center gap-1.5 px-4 py-3" style={{ borderBottom: `1px solid ${LINE}` }}>
-      <Icon size={14} color={AMBER} />
+      <Icon size={14} color={ACCENT} />
       <span className="text-sm font-medium" style={{ color: TEXT }}>{title}</span>
     </div>
   );
@@ -767,7 +767,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
       if (!pos) return;
       const info = driversByNumber?.[num] || {};
       const [cx, cy] = project(pos.x, pos.y);
-      dots.push({ num, cx, cy, code: info.code || num, color: info.color || AMBER });
+      dots.push({ num, cx, cy, code: info.code || num, color: info.color || ACCENT });
     });
   }
 
@@ -861,7 +861,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
                   key={l.lap_number}
                   onClick={() => { setLapNumber(l.lap_number); setLapOpen(false); }}
                   className="w-full text-left px-3 py-2 text-sm flex items-center justify-between"
-                  style={{ color: l.lap_number === lapNumber ? AMBER : TEXT, borderBottom: `1px solid ${LINE}` }}
+                  style={{ color: l.lap_number === lapNumber ? ACCENT : TEXT, borderBottom: `1px solid ${LINE}` }}
                 >
                   <span className="flex items-center gap-1.5">
                     {l.lap_number}랩
@@ -906,8 +906,8 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           aria-label={playing ? "일시정지" : "재생"}
         >
           {playing
-            ? <Pause size={13} color={AMBER} fill={AMBER} />
-            : <Play size={13} color={AMBER} fill={AMBER} />}
+            ? <Pause size={13} color={ACCENT} fill={ACCENT} />
+            : <Play size={13} color={ACCENT} fill={ACCENT} />}
         </button>
 
         <div className="relative shrink-0">
@@ -916,8 +916,8 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             disabled={!ready}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md font-medium"
             style={{
-              color: speed === 1 ? TEXT : AMBER,
-              border: `1px solid ${speed === 1 ? LINE : AMBER}`,
+              color: speed === 1 ? TEXT : ACCENT,
+              border: `1px solid ${speed === 1 ? LINE : ACCENT}`,
               backgroundColor: SURFACE_2,
               opacity: ready ? 1 : 0.4,
             }}
@@ -933,7 +933,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
                   key={s}
                   onClick={() => { setSpeed(s); setSpeedOpen(false); }}
                   className="w-full text-left px-3 py-2 text-sm"
-                  style={{ color: s === speed ? AMBER : TEXT, borderBottom: `1px solid ${LINE}` }}
+                  style={{ color: s === speed ? ACCENT : TEXT, borderBottom: `1px solid ${LINE}` }}
                 >
                   {s}×
                 </button>
@@ -954,7 +954,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           disabled={!ready}
           onChange={(e) => setElapsed(Number(e.target.value))}
           className="flex-1"
-          style={{ accentColor: AMBER, minWidth: "120px" }}
+          style={{ accentColor: ACCENT, minWidth: "120px" }}
         />
 
         <span className="text-xs shrink-0" style={{ color: MUTED, fontFamily: "ui-monospace, monospace" }}>
@@ -1052,7 +1052,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             <div style={{ flex: "0 0 118px", position: "relative", height: `${liveOrder.length * ORDER_ROW_H}px` }}>
               {orderRows.map(({ num, position, slot }) => {
                 const info = driversByNumber?.[num] || {};
-                const color = info.color || AMBER;
+                const color = info.color || ACCENT;
                 return (
                   <div
                     key={num}
@@ -1220,7 +1220,7 @@ function TeamRadioPanel({ items, loading, error }) {
                   <button
                     onClick={() => toggle(i, r.url)}
                     className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: r.url ? (r.teamColor || AMBER) : LINE, cursor: r.url ? "pointer" : "default" }}
+                    style={{ backgroundColor: r.url ? (r.teamColor || ACCENT) : LINE, cursor: r.url ? "pointer" : "default" }}
                     aria-label="재생"
                   >
                     {(() => {
@@ -1303,7 +1303,7 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
             <button
               onClick={() => setSelectedSessionKey(latestSessionKey)}
               className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md font-medium"
-              style={{ color: AMBER, border: `1px solid ${AMBER}` }}
+              style={{ color: ACCENT, border: `1px solid ${ACCENT}` }}
             >
               <ArrowLeft size={14} />
               최신 세션으로
@@ -1328,7 +1328,7 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
                     key={r.session_key}
                     onClick={() => { setSelectedSessionKey(r.session_key); setPastOpen(false); }}
                     className="w-full text-left px-3.5 py-2.5 text-sm flex flex-col"
-                    style={{ color: r.session_key === selectedSessionKey ? AMBER : TEXT, borderBottom: `1px solid ${LINE}` }}
+                    style={{ color: r.session_key === selectedSessionKey ? ACCENT : TEXT, borderBottom: `1px solid ${LINE}` }}
                   >
                     <span className="font-medium">{koGpName(r.gpName)}</span>
                     <span className="text-xs mt-0.5" style={{ color: MUTED }}>{formatKoreanDate(r.date_start)}</span>
@@ -1357,7 +1357,7 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
             {sessionData.loadingResults ? <LoadingBlock /> : sessionData.resultsError ? <ErrorBlock message={sessionData.resultsError} /> : (
               sessionData.rows.map((d, i) => (
                 <div key={d.code} className="grid grid-cols-12 px-4 py-3 items-center text-sm" style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                  <div className="col-span-1" style={{ color: d.pos === 1 ? AMBER : TEXT }}>{d.pos}</div>
+                  <div className="col-span-1" style={{ color: d.pos === 1 ? ACCENT : TEXT }}>{d.pos}</div>
                   <div className="col-span-3 flex items-center gap-2 font-bold" style={{ color: readableAccent(d.teamColor) || TEXT, fontSize: "15px", fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "0.01em" }}>
                     {d.team && (
                       <span
@@ -1443,7 +1443,7 @@ function CalendarTab({ upcoming, loading, error }) {
           {upcoming.map((r) => (
             <div key={r.session_key} className="flex items-center justify-between px-4 py-4 rounded-lg" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
               <div className="flex items-center gap-3">
-                <MapPin size={16} color={AMBER} />
+                <MapPin size={16} color={ACCENT} />
                 <div>
                   <div className="text-sm font-medium" style={{ color: TEXT }}>{koGpName(r.gpName)}</div>
                   <div className="text-xs mt-0.5" style={{ color: MUTED }}>{r.circuit}</div>
@@ -1451,7 +1451,7 @@ function CalendarTab({ upcoming, loading, error }) {
               </div>
               <div className="text-right">
                 <div className="text-sm" style={{ color: TEXT }}>{formatKoreanDate(r.date_start)}</div>
-                <div className="text-xs mt-0.5" style={{ color: AMBER }}>D-{r.daysLeft}</div>
+                <div className="text-xs mt-0.5" style={{ color: ACCENT }}>D-{r.daysLeft}</div>
               </div>
             </div>
           ))}
@@ -1478,7 +1478,7 @@ function BlogTab() {
         className="p-6 rounded-lg mb-3"
         style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}
       >
-        <div className="text-xs font-medium mb-3" style={{ color: AMBER }}>{featured.tag}</div>
+        <div className="text-xs font-medium mb-3" style={{ color: ACCENT }}>{featured.tag}</div>
         <div className="text-xl font-semibold leading-snug mb-3" style={{ color: TEXT, letterSpacing: "-0.01em" }}>
           {featured.title}
         </div>
@@ -1493,7 +1493,7 @@ function BlogTab() {
             style={{ borderBottom: i < rest.length - 1 ? `1px solid ${LINE}` : "none" }}
           >
             <div>
-              <div className="text-xs font-medium mb-1" style={{ color: AMBER }}>{p.tag}</div>
+              <div className="text-xs font-medium mb-1" style={{ color: ACCENT }}>{p.tag}</div>
               <div className="text-sm font-medium" style={{ color: TEXT }}>{p.title}</div>
             </div>
             <div className="text-xs shrink-0" style={{ color: MUTED }}>{p.date}</div>
@@ -1615,7 +1615,7 @@ export default function F1CosmosHome() {
         drivers.forEach((d) => {
           driversByNumber[d.driver_number] = {
             code: d.name_acronym || String(d.driver_number),
-            color: d.team_colour ? `#${d.team_colour}` : AMBER,
+            color: d.team_colour ? `#${d.team_colour}` : ACCENT,
           };
         });
 
@@ -1676,7 +1676,7 @@ export default function F1CosmosHome() {
           .sort((a, b) => new Date(b.date) - new Date(a.date))
           .map((r) => {
             const drv = driverMap[r.driver_number] || {};
-            return { driver: drv.full_name || String(r.driver_number), team: drv.team_name || "", teamColor: drv.team_colour ? `#${drv.team_colour}` : AMBER, time: new Date(r.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), url: r.recording_url, photo: drv.headshot_url || null };
+            return { driver: drv.full_name || String(r.driver_number), team: drv.team_name || "", teamColor: drv.team_colour ? `#${drv.team_colour}` : ACCENT, time: new Date(r.date).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }), url: r.recording_url, photo: drv.headshot_url || null };
           });
 
         const sortedRaceControl = raceControl
@@ -1725,11 +1725,11 @@ export default function F1CosmosHome() {
     <div className="w-full min-h-screen" style={{ backgroundColor: ASPHALT, fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <header className="flex items-center justify-between px-6 py-4 flex-wrap gap-4" style={{ borderBottom: `1px solid ${LINE}` }}>
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: AMBER }}>
+          <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: ACCENT }}>
             <Zap size={16} color={ASPHALT} strokeWidth={2.5} />
           </div>
           <span className="font-bold text-base tracking-wide" style={{ color: TEXT, letterSpacing: "0.02em" }}>
-            F1 <span style={{ color: AMBER }}>패독</span>
+            F1 <span style={{ color: ACCENT }}>패독</span>
           </span>
         </div>
 
@@ -1738,7 +1738,7 @@ export default function F1CosmosHome() {
             const Icon = t.icon;
             const active = tab === t.id;
             return (
-              <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium transition-colors" style={{ color: active ? AMBER : MUTED, backgroundColor: active ? SURFACE : "transparent" }}>
+              <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium transition-colors" style={{ color: active ? ACCENT : MUTED, backgroundColor: active ? SURFACE : "transparent" }}>
                 <Icon size={15} />
                 {t.label}
               </button>

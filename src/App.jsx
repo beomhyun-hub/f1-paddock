@@ -309,6 +309,18 @@ const PLAYBACK_SPEEDS = [0.5, 1, 2, 4];
 const DOT_R = 5.6;
 const DOT_LABEL_GAP = 4;
 
+// 스타트/피니시 라인. LENGTH는 트랙을 가로지르는 길이(트랙 선 두께 14보다 조금 길게),
+// DEPTH는 진행 방향 쪽 두께예요. 격자 두 줄이 나오도록 CELL의 2배로 둡니다.
+const CHECKER_CELL = 1.6;
+const CHECKER_LENGTH = 15;
+const CHECKER_DEPTH = CHECKER_CELL * 2;
+
+const SAFETY_YELLOW = "#F5C518";
+
+// 코너 번호를 트랙 바깥으로 밀어내는 거리(트랙 좌표 단위).
+// 서킷 데이터가 코너마다 주는 angle 방향으로 밀면 번호가 트랙 안쪽으로 들어가지 않아요.
+const CORNER_LABEL_OFFSET = 520;
+
 const TRACK_MAX_W = 560;
 const TRACK_MAX_H = 300;
 const TRACK_PAD = 26;
@@ -317,9 +329,15 @@ const TRACK_PAD = 26;
 // 기준으로 viewBox에 맞춰 넣어요. 가로세로 비율은 그대로 두고(찌그러짐 방지),
 // viewBox 자체를 트랙 비율에 맞게 잡아서 헝가로링처럼 세로로 긴 서킷도 양옆이 비지 않게 합니다.
 // SVG는 y가 아래로 증가하니 y축은 뒤집습니다.
-function makeProjection(points) {
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
+// rotationDeg는 서킷 데이터가 알려주는 표준 방향이에요. 중계 화면에서 보던 각도로 맞춰줍니다.
+function makeProjection(points, rotationDeg = 0) {
+  const rad = (rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const spin = (x, y) => [x * cos - y * sin, x * sin + y * cos];
+
+  const spun = points.map(([x, y]) => spin(x, y));
+  const xs = spun.map((p) => p[0]);
+  const ys = spun.map((p) => p[1]);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const spanX = maxX - minX || 1;
@@ -327,11 +345,80 @@ function makeProjection(points) {
   const scale = Math.min((TRACK_MAX_W - TRACK_PAD * 2) / spanX, (TRACK_MAX_H - TRACK_PAD * 2) / spanY);
   const width = spanX * scale + TRACK_PAD * 2;
   const height = spanY * scale + TRACK_PAD * 2;
-  const project = (x, y) => [
-    (x - minX) * scale + TRACK_PAD,
-    height - ((y - minY) * scale + TRACK_PAD),
-  ];
+  const project = (x, y) => {
+    const [rx, ry] = spin(x, y);
+    return [(rx - minX) * scale + TRACK_PAD, height - ((ry - minY) * scale + TRACK_PAD)];
+  };
   return { project, width, height };
+}
+
+// MultiViewer 서킷 데이터는 코너 번호와 촘촘한 트랙 윤곽선을 주고, 좌표계가 F1 포지션
+// 피드와 같아서 OpenF1 차량 좌표와 그대로 겹칩니다(FastF1이 쓰는 것과 같은 출처예요).
+// 공식 API가 아니라서 실패할 수 있고, 그때는 우리가 받은 주행 좌표로 윤곽선을 대신 그려요.
+async function fetchCircuitGeometry(circuitKey, year) {
+  const geo = await fetchJSON(`https://api.multiviewer.app/api/v1/circuits/${circuitKey}/${year}`);
+  if (!Array.isArray(geo?.x) || geo.x.length < 50) throw new Error("서킷 윤곽선 없음");
+  return {
+    outline: geo.x.map((x, i) => [x, geo.y[i]]),
+    corners: Array.isArray(geo.corners) ? geo.corners : [],
+    rotation: typeof geo.rotation === "number" ? geo.rotation : 0,
+  };
+}
+
+// 트랙을 가로지르는 체커드 라인을 그리려면 그 지점의 진행 방향이 필요해요.
+// 앞뒤로 조금 떨어진 점을 이어서 접선을 구하면 한 점씩만 볼 때보다 방향이 안정적입니다.
+function tangentAt(pts, index, span = 3) {
+  const n = pts.length;
+  const a = pts[(index - span + n) % n];
+  const b = pts[(index + span) % n];
+  return (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+}
+
+// race_control 의 SafetyCar 메시지는 네 가지예요.
+// SAFETY CAR DEPLOYED / SAFETY CAR IN THIS LAP / VSC DEPLOYED / VSC ENDING.
+// "IN THIS LAP"은 그 랩이 끝날 때까지 세이프티카가 남아 있다는 뜻이라, 메시지 시각이 아니라
+// 다음 랩이 시작되는 시각에 구간을 닫아야 실제 상황과 맞습니다.
+// 끝 메시지 없이 레이스가 끝나는 경우도 있어서, 그때는 열린 채로 둡니다.
+function buildSafetyCarPeriods(events, laps) {
+  const periods = [];
+  let open = null;
+  [...events]
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .forEach((e) => {
+      const msg = (e.message || "").toUpperCase();
+      const at = new Date(e.date).getTime();
+
+      if (msg.includes("DEPLOYED")) {
+        if (!open) open = { type: msg.includes("VSC") || msg.includes("VIRTUAL") ? "VSC" : "SC", from: at };
+        return;
+      }
+      if (!open) return;
+
+      if (msg.includes("IN THIS LAP")) {
+        const next = laps.find((l) => new Date(l.date_start).getTime() > at);
+        open.to = next ? new Date(next.date_start).getTime() : at;
+      } else if (msg.includes("ENDING")) {
+        open.to = at;
+      } else {
+        return;
+      }
+      periods.push(open);
+      open = null;
+    });
+  if (open) {
+    open.to = Infinity;
+    periods.push(open);
+  }
+  return periods;
+}
+
+function nearestIndex(pts, x, y) {
+  let best = 0, bestD = Infinity;
+  pts.forEach((p, i) => {
+    const d = (p[0] - x) ** 2 + (p[1] - y) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
 }
 
 // (0, 0)은 신호가 끊긴 구간에 들어오는 값이라 버려요.
@@ -427,7 +514,7 @@ function positionAt(track, ms) {
   };
 }
 
-function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
+function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year, safetyCarEvents, resultsLoading }) {
   const [laps, setLaps] = useState([]);
   const [lapNumber, setLapNumber] = useState(null);
   const [outline, setOutline] = useState(null);
@@ -477,19 +564,61 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
         );
         if (cancelled) return;
 
-        const pts = dedupeConsecutive(cleanLocations(raw));
+        const pts = dedupeConsecutive(cleanLocations(raw)).map((p) => [p.x, p.y]);
         if (pts.length < 8) return;
+
+        // 랩이 시작되는 순간의 좌표가 곧 스타트/피니시 라인이에요.
+        const startAt = pts[0];
+
+        // 코너 번호가 트랙 위에 정확히 얹히려면 서킷 윤곽선도 같은 출처여야 해요.
+        // 우리 주행 좌표는 헝가로링 기준 한 랩에 26점뿐이라 트랙 최외곽을 놓치는 구간이 있습니다.
+        let geo = null;
+        try {
+          if (circuitKey) geo = await fetchCircuitGeometry(circuitKey, year);
+        } catch (e) {
+          geo = null;
+        }
+        if (cancelled) return;
+
+        if (geo) {
+          const { project, width, height } = makeProjection(geo.outline, geo.rotation);
+          const screen = thinPoints(geo.outline.map(([x, y]) => project(x, y)), 1.5);
+          const d = `M ${screen.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L ")} Z`;
+          const startIdx = nearestIndex(screen, ...project(startAt[0], startAt[1]));
+          setOutline({
+            d,
+            project,
+            width,
+            height,
+            corners: geo.corners,
+            startLine: { at: screen[startIdx], angle: tangentAt(screen, startIdx) },
+            source: "circuit",
+          });
+          return;
+        }
+
+        // 서킷 데이터를 못 받으면 주행 좌표로 대체해요. 코너 번호는 못 얹지만 트랙과 차량은 보입니다.
         const { project, width, height } = makeProjection(pts);
-        const d = closedSplinePath(pts.map((p) => project(p.x, p.y)));
+        const screen = thinPoints(pts.map(([x, y]) => project(x, y)), 3);
+        const d = closedSplinePath(screen);
         if (!d) return;
-        setOutline({ d, project, width, height });
+        const startIdx = nearestIndex(screen, ...project(startAt[0], startAt[1]));
+        setOutline({
+          d,
+          project,
+          width,
+          height,
+          corners: [],
+          startLine: { at: screen[startIdx], angle: tangentAt(screen, startIdx, 1) },
+          source: "location",
+        });
       } catch (e) {
         if (!cancelled) setError("트랙 좌표를 불러오지 못했어요.");
       }
     }
     loadTrack();
     return () => { cancelled = true; };
-  }, [sessionKey, leaderNumber]);
+  }, [sessionKey, leaderNumber, circuitKey, year]);
 
   // 선택한 랩의 전체 드라이버 좌표(약 1MB, 요청 1번). 이미 본 랩은 캐시에서 꺼내 씁니다.
   useEffect(() => {
@@ -574,8 +703,41 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
     });
   }
 
+  const corners = [];
+  if (project && outline?.corners?.length) {
+    outline.corners.forEach((c) => {
+      const pos = c.trackPosition;
+      if (!pos || typeof c.angle !== "number") return;
+      const rad = (c.angle * Math.PI) / 180;
+      const [x, y] = project(
+        pos.x + CORNER_LABEL_OFFSET * Math.cos(rad),
+        pos.y + CORNER_LABEL_OFFSET * Math.sin(rad)
+      );
+      corners.push({ key: `${c.number}${c.letter || ""}`, x, y });
+    });
+  }
+
   const currentLap = laps.find((l) => l.lap_number === lapNumber);
   const ready = outline && tracks;
+
+  const safetyCarPeriods = safetyCarEvents?.length && laps.length
+    ? buildSafetyCarPeriods(safetyCarEvents, laps)
+    : [];
+
+  // 재생 위치(랩 시작 시각 + 경과)가 세이프티카 구간 안에 들어가면 표시해요.
+  let activeSafetyCar = null;
+  if (currentLap && safetyCarPeriods.length) {
+    const nowMs = new Date(currentLap.date_start).getTime() + elapsed;
+    activeSafetyCar = safetyCarPeriods.find((p) => nowMs >= p.from && nowMs < p.to) || null;
+  }
+
+  // 세이프티카는 보통 70랩 중 두어 랩뿐이라, 랩 목록에 표시해 두지 않으면 찾아 들어가기 어려워요.
+  const safetyCarLaps = new Set();
+  safetyCarPeriods.length && laps.forEach((l) => {
+    const from = new Date(l.date_start).getTime();
+    const to = from + l.lap_duration * 1000;
+    if (safetyCarPeriods.some((p) => from < p.to && to > p.from)) safetyCarLaps.add(l.lap_number);
+  });
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
@@ -601,7 +763,18 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
                   className="w-full text-left px-3 py-2 text-sm flex items-center justify-between"
                   style={{ color: l.lap_number === lapNumber ? AMBER : TEXT, borderBottom: `1px solid ${LINE}` }}
                 >
-                  <span>{l.lap_number}랩</span>
+                  <span className="flex items-center gap-1.5">
+                    {l.lap_number}랩
+                    {safetyCarLaps.has(l.lap_number) && (
+                      <span
+                        className="rounded-sm px-1 text-[9px] font-bold"
+                        style={{ backgroundColor: SAFETY_YELLOW, color: ASPHALT }}
+                        title="세이프티카 구간"
+                      >
+                        SC
+                      </span>
+                    )}
+                  </span>
                   <span className="text-xs" style={{ color: MUTED }}>
                     {lapCache.current[l.lap_number] ? "●" : ""} {l.lap_duration.toFixed(1)}s
                   </span>
@@ -679,12 +852,61 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
       {!error && !sessionKey ? (
         <div className="px-4 py-8 text-sm text-center" style={{ color: MUTED }}>세션을 먼저 선택해 주세요.</div>
       ) : !error && !leaderNumber ? (
-        <div className="px-4 py-8 text-sm text-center" style={{ color: MUTED }}>이 세션은 좌표 데이터를 쓸 수 없어요.</div>
+        // 순위표가 아직 안 왔을 뿐인데 "쓸 수 없다"고 하면 안 되니 로딩과 구분해요.
+        resultsLoading
+          ? <LoadingBlock label="트랙 좌표를 불러오는 중..." />
+          : <div className="px-4 py-8 text-sm text-center" style={{ color: MUTED }}>이 세션은 좌표 데이터를 쓸 수 없어요.</div>
       ) : !error && !outline ? <LoadingBlock label="트랙 좌표를 불러오는 중..." /> : !error && (
-        <div className="p-4">
+        <div className="p-4 relative">
+          {activeSafetyCar && (
+            <div
+              className="absolute left-4 top-4 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold"
+              style={{ backgroundColor: SAFETY_YELLOW, color: ASPHALT }}
+            >
+              <AlertCircle size={12} />
+              {activeSafetyCar.type === "VSC" ? "버추얼 세이프티카" : "세이프티카"}
+            </div>
+          )}
           <svg viewBox={`0 0 ${outline.width.toFixed(0)} ${outline.height.toFixed(0)}`} className="w-full h-auto" style={{ maxHeight: "340px" }}>
+            <defs>
+              <pattern id="track-checker" width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} patternUnits="userSpaceOnUse">
+                <rect width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} fill={TEXT} />
+                <rect width={CHECKER_CELL} height={CHECKER_CELL} fill={ASPHALT} />
+                <rect x={CHECKER_CELL} y={CHECKER_CELL} width={CHECKER_CELL} height={CHECKER_CELL} fill={ASPHALT} />
+              </pattern>
+            </defs>
+
             <path d={outline.d} fill="none" stroke={LINE} strokeWidth="14" strokeLinejoin="round" strokeLinecap="round" />
             <path d={outline.d} fill="none" stroke={SURFACE_2} strokeWidth="10" strokeLinejoin="round" strokeLinecap="round" />
+
+            {/* 코너 번호는 차량 점보다 아래에 깔아서, 겹칠 때 차가 가려지지 않게 해요. */}
+            {corners.map((c) => (
+              <text
+                key={c.key}
+                x={c.x}
+                y={c.y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="7.5"
+                fontWeight="600"
+                fill={MUTED}
+                fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
+              >
+                {c.key}
+              </text>
+            ))}
+
+            {outline.startLine && (
+              <rect
+                x={-CHECKER_LENGTH / 2}
+                y={-CHECKER_DEPTH / 2}
+                width={CHECKER_LENGTH}
+                height={CHECKER_DEPTH}
+                fill="url(#track-checker)"
+                transform={`translate(${outline.startLine.at[0].toFixed(1)} ${outline.startLine.at[1].toFixed(1)}) rotate(${(outline.startLine.angle + 90).toFixed(1)})`}
+              />
+            )}
+
             {dots.map((p) => (
               <g key={p.num}>
                 <circle cx={p.cx} cy={p.cy} r={DOT_R} fill={p.color} stroke={ASPHALT} strokeWidth="1.5" />
@@ -1030,6 +1252,10 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
             sessionKey={selectedSessionKey}
             leaderNumber={sessionData.rows.find((r) => r.pos === 1)?.num}
             driversByNumber={sessionData.driversByNumber}
+            circuitKey={currentMeta?.circuit_key}
+            year={currentMeta?.year}
+            safetyCarEvents={sessionData.safetyCarEvents}
+            resultsLoading={sessionData.loadingResults}
           />
         </div>
 
@@ -1189,8 +1415,27 @@ export default function F1CosmosHome() {
 
     let cancelled = false;
 
+    // 결과 단계까지 성공했는지. 실패했을 때 어느 쪽에 오류를 표시할지 가릅니다.
+    let resultsDone = false;
+
     async function loadSession() {
-      setSessionData((prev) => ({ ...prev, loadingResults: true, loadingExtras: true, resultsError: null, extrasError: null }));
+      // 다른 경기를 고른 거라 이전 경기 데이터는 여기서 모두 비워요.
+      // 남겨두면 로딩에 실패했을 때 헤더는 새 경기인데 패널은 이전 경기를 보여주게 됩니다.
+      setSessionData((prev) => ({
+        ...prev,
+        rows: [],
+        weather: null,
+        pitStops: [],
+        teamRadio: [],
+        raceControl: [],
+        driverColors: null,
+        driversByNumber: null,
+        safetyCarEvents: null,
+        loadingResults: true,
+        loadingExtras: true,
+        resultsError: null,
+        extrasError: null,
+      }));
 
       try {
         // OpenF1 무료 티어는 초당 3회/분당 30회 제한이 있어서, 한꺼번에 몰아서 요청하지 않고
@@ -1243,6 +1488,7 @@ export default function F1CosmosHome() {
 
         if (cancelled) return;
         setSessionData((prev) => ({ ...prev, rows, driversByNumber, loadingResults: false }));
+        resultsDone = true;
 
         await sleep(350);
         const weatherArr = await fetchJSON(`https://api.openf1.org/v1/weather?session_key=${selectedSessionKey}`);
@@ -1282,16 +1528,29 @@ export default function F1CosmosHome() {
           text: translatedMessages[i] || m.message,
         }));
 
+        // 트랙맵에서 세이프티카 구간을 표시하려면 번역 전 원문과 정확한 시각이 필요해요.
+        const safetyCarEvents = raceControl
+          .filter((m) => m.category === "SafetyCar")
+          .map((m) => ({ date: m.date, message: m.message, lap_number: m.lap_number }));
+
         if (cancelled) return;
 
         // 다음에 같은 경기를 다시 고르면 재요청 없이 바로 보여줄 수 있도록 캐시에 저장
-        sessionCache.current[selectedSessionKey] = { rows, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, driversByNumber };
+        sessionCache.current[selectedSessionKey] = { rows, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, driversByNumber, safetyCarEvents };
 
-        setSessionData((prev) => ({ ...prev, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, driversByNumber, loadingExtras: false }));
+        setSessionData((prev) => ({ ...prev, weather, pitStops, teamRadio, raceControl: raceControlItems, driverColors, driversByNumber, safetyCarEvents, loadingExtras: false }));
       } catch (e) {
-        // 요청 제한(429)에 걸렸거나 네트워크 문제일 때: 지금 화면에 보이는 데이터를 그대로 유지해요.
+        // 요청 제한(429)에 걸렸거나 네트워크 문제일 때. 비운 채로 두고 오류를 알려요.
+        // 이전 경기 데이터를 남겨두면 다른 경기 내용을 지금 경기인 것처럼 보여주게 됩니다.
         if (cancelled) return;
-        setSessionData((prev) => ({ ...prev, loadingResults: false, loadingExtras: false }));
+        const message = "데이터를 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+        setSessionData((prev) => ({
+          ...prev,
+          loadingResults: false,
+          loadingExtras: false,
+          resultsError: resultsDone ? null : message,
+          extrasError: message,
+        }));
       }
     }
     loadSession();

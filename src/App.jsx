@@ -302,7 +302,7 @@ function PanelHeader({ icon: Icon, title }) {
 // 전체 드라이버 × 1랩이 약 1MB라서 레이스 전체(약 57MB)를 한 번에 받는 건 무리예요.
 // 그래서 "랩 하나"를 단위로 필요할 때만 받아오고, 한 번 받은 랩은 캐시에 남겨둡니다.
 
-const PLAYBACK_SPEEDS = [1, 2, 4, 0.5];
+const PLAYBACK_SPEEDS = [0.5, 1, 2, 4];
 
 // 드라이버 점 반지름과, 점 위쪽 테두리에서 코드 라벨까지 띄울 간격.
 // 점 크기를 바꿔도 라벨이 같은 간격으로 따라오도록 반지름과 분리해 뒀어요.
@@ -436,6 +436,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
   const [elapsed, setElapsed] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [speedOpen, setSpeedOpen] = useState(false);
   const [loadingLap, setLoadingLap] = useState(false);
   const [error, setError] = useState(null);
   const [lapOpen, setLapOpen] = useState(false);
@@ -583,7 +584,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
       <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: `1px solid ${LINE}` }}>
         <div className="relative">
           <button
-            onClick={() => setLapOpen((v) => !v)}
+            onClick={() => { setLapOpen((v) => !v); setSpeedOpen(false); }}
             disabled={laps.length === 0}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md font-medium"
             style={{ color: laps.length === 0 ? MUTED : TEXT, border: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}
@@ -625,24 +626,37 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
             : <Play size={13} color={AMBER} fill={AMBER} />}
         </button>
 
-        <button
-          onClick={() => setSpeed((v) => PLAYBACK_SPEEDS[(PLAYBACK_SPEEDS.indexOf(v) + 1) % PLAYBACK_SPEEDS.length])}
-          disabled={!ready}
-          className="flex items-center justify-center rounded-md shrink-0 text-xs font-bold"
-          style={{
-            height: "32px",
-            padding: "0 8px",
-            minWidth: "38px",
-            border: `1px solid ${speed === 1 ? LINE : AMBER}`,
-            backgroundColor: SURFACE_2,
-            color: speed === 1 ? MUTED : AMBER,
-            fontFamily: "ui-monospace, monospace",
-            opacity: ready ? 1 : 0.4,
-          }}
-          aria-label={`재생 속도 ${speed}배속`}
-        >
-          {speed}×
-        </button>
+        <div className="relative shrink-0">
+          <button
+            onClick={() => { setSpeedOpen((v) => !v); setLapOpen(false); }}
+            disabled={!ready}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md font-medium"
+            style={{
+              color: speed === 1 ? TEXT : AMBER,
+              border: `1px solid ${speed === 1 ? LINE : AMBER}`,
+              backgroundColor: SURFACE_2,
+              opacity: ready ? 1 : 0.4,
+            }}
+            aria-label={`재생 속도 ${speed}배속`}
+          >
+            {speed}×
+            <ChevronDown size={14} />
+          </button>
+          {speedOpen && (
+            <div className="absolute left-0 mt-1 w-24 rounded-md overflow-hidden z-10" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
+              {PLAYBACK_SPEEDS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => { setSpeed(s); setSpeedOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm"
+                  style={{ color: s === speed ? AMBER : TEXT, borderBottom: `1px solid ${LINE}` }}
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <input
           type="range"

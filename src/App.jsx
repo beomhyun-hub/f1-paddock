@@ -188,13 +188,22 @@ function sleep(ms) {
 
 // OpenF1 무료 티어는 초당 3회/분당 30회 제한이 있어요. 개발 모드의 StrictMode처럼
 // 요청이 몰리는 상황에선 429가 나기 쉬워서, 429일 때만 잠깐 쉬었다가 다시 시도해요.
-async function fetchJSON(url, retries = 3) {
+async function fetchJSON(url, { retries = 3, emptyOn404 = false } = {}) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url);
     if (res.ok) return res.json();
+    if (res.status === 404 && emptyOn404) return [];
     if (res.status !== 429 || attempt >= retries) throw new Error(`요청 실패 (${res.status})`);
     await sleep(1500 * (attempt + 1) ** 2);
   }
+}
+
+// OpenF1은 해당하는 데이터가 없을 때 빈 배열이 아니라 404를 돌려줘요.
+// (예: 중국 GP는 팀 라디오가 없어서 team_radio 가 404입니다.)
+// 이걸 오류로 두면 뒤따르는 요청이 통째로 취소돼서, 팀 라디오 하나 때문에
+// 레이스 컨트롤·피트스탑까지 같이 사라집니다. 그래서 "데이터 없음"으로 바꿔 줘요.
+function fetchOpenF1(url) {
+  return fetchJSON(url, { emptyOn404: true });
 }
 
 async function translateBatch(texts) {
@@ -349,7 +358,17 @@ function makeProjection(points, rotationDeg = 0) {
     const [rx, ry] = spin(x, y);
     return [(rx - minX) * scale + TRACK_PAD, height - ((ry - minY) * scale + TRACK_PAD)];
   };
-  return { project, width, height };
+
+  // 차가 트랙 위에 없을 때(리타이어·개러지) 좌표 피드는 서킷에서 한참 떨어진 고정 좌표를
+  // 계속 내보내요. 상하이는 (-8325, -7058)로, 트랙에서 서킷 크기의 46%만큼 떨어져 있습니다.
+  // 값 자체는 서킷마다 다르니 하드코딩하지 않고, 트랙 경계 밖인지로 걸러요.
+  const margin = Math.max(spanX, spanY) * 0.06;
+  const onTrack = (x, y) => {
+    const [rx, ry] = spin(x, y);
+    return rx >= minX - margin && rx <= maxX + margin && ry >= minY - margin && ry <= maxY + margin;
+  };
+
+  return { project, width, height, onTrack };
 }
 
 // MultiViewer 서킷 데이터는 코너 번호와 촘촘한 트랙 윤곽선을 주고, 좌표계가 F1 포지션
@@ -412,14 +431,6 @@ function buildSafetyCarPeriods(events, laps) {
   return periods;
 }
 
-function nearestIndex(pts, x, y) {
-  let best = 0, bestD = Infinity;
-  pts.forEach((p, i) => {
-    const d = (p[0] - x) ** 2 + (p[1] - y) ** 2;
-    if (d < bestD) { bestD = d; best = i; }
-  });
-  return best;
-}
 
 // (0, 0)은 신호가 끊긴 구간에 들어오는 값이라 버려요.
 function cleanLocations(raw) {
@@ -491,9 +502,15 @@ function lapWindow(lap) {
   return { start, end, durationMs: lap.lap_duration * 1000 };
 }
 
+// 좌표 피드는 보통 0.25초 간격으로 촘촘히 와요(상하이 12랩 기준 중앙값 240ms, 최대 940ms).
+// 이보다 한참 벌어졌다면 그 구간은 차가 트랙에 없었다는 뜻이라, 억지로 이어 붙이면
+// 점이 트랙을 가로질러 날아갔다 돌아오는 것처럼 보여요. 그럴 땐 아예 그리지 않습니다.
+const MAX_GAP_MS = 3000;
+
 // 샘플 사이를 스플라인으로 채워서, 성긴 좌표를 부드럽게 움직이는 점으로 만들어요.
 function positionAt(track, ms) {
-  if (track.length === 0) return null;
+  if (track.length < 2) return null;
+  if (ms < track[0].t - MAX_GAP_MS || ms > track[track.length - 1].t + MAX_GAP_MS) return null;
   if (track.length < 4) return track[0];
   if (ms <= track[0].t) return track[0];
   if (ms >= track[track.length - 1].t) return track[track.length - 1];
@@ -505,6 +522,7 @@ function positionAt(track, ms) {
   }
   const at = (i) => track[Math.max(0, Math.min(track.length - 1, i))];
   const a = at(lo), b = at(lo + 1);
+  if (b.t - a.t > MAX_GAP_MS) return null;
   const span = b.t - a.t;
   const f = span > 0 ? (ms - a.t) / span : 0;
   const p0 = at(lo - 1), p3 = at(lo + 2);
@@ -546,29 +564,12 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
         await sleep(2500);
         if (cancelled) return;
 
-        const all = await fetchJSON(`https://api.openf1.org/v1/laps?session_key=${sessionKey}&driver_number=${leaderNumber}`);
+        const all = await fetchOpenF1(`https://api.openf1.org/v1/laps?session_key=${sessionKey}&driver_number=${leaderNumber}`);
         const usable = all.filter((l) => l.date_start && typeof l.lap_duration === "number");
         if (cancelled || usable.length === 0) return;
 
         setLaps(usable);
         setLapNumber(usable[usable.length - 1].lap_number);
-
-        const clean = usable.filter((l) => !l.is_pit_out_lap);
-        const reference = (clean.length > 0 ? clean : usable).slice().sort((a, b) => a.lap_duration - b.lap_duration)[0];
-        const { start, end } = lapWindow(reference);
-
-        await sleep(400);
-        const raw = await fetchJSON(
-          `https://api.openf1.org/v1/location?session_key=${sessionKey}&driver_number=${leaderNumber}` +
-          `&date%3E${toApiDate(start)}&date%3C${toApiDate(end)}`
-        );
-        if (cancelled) return;
-
-        const pts = dedupeConsecutive(cleanLocations(raw)).map((p) => [p.x, p.y]);
-        if (pts.length < 8) return;
-
-        // 랩이 시작되는 순간의 좌표가 곧 스타트/피니시 라인이에요.
-        const startAt = pts[0];
 
         // 코너 번호가 트랙 위에 정확히 얹히려면 서킷 윤곽선도 같은 출처여야 해요.
         // 우리 주행 좌표는 헝가로링 기준 한 랩에 26점뿐이라 트랙 최외곽을 놓치는 구간이 있습니다.
@@ -581,35 +582,59 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
         if (cancelled) return;
 
         if (geo) {
-          const { project, width, height } = makeProjection(geo.outline, geo.rotation);
+          // 서킷 윤곽선의 첫 점이 곧 스타트/피니시 라인이에요.
+          // 리더의 랩 시작 좌표와 맞춰 보면 헝가로링 0.1%, 상하이 0.3%(서킷 크기 대비) 안에 들어와요.
+          // 덕분에 참조 랩 좌표를 따로 받지 않아도 되고, 모나코처럼 대부분의 랩에
+          // location 데이터가 없는 세션에서도 트랙맵이 뜹니다.
+          const { project, width, height, onTrack } = makeProjection(geo.outline, geo.rotation);
           const screen = thinPoints(geo.outline.map(([x, y]) => project(x, y)), 1.5);
           const d = `M ${screen.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L ")} Z`;
-          const startIdx = nearestIndex(screen, ...project(startAt[0], startAt[1]));
           setOutline({
             d,
             project,
+            onTrack,
             width,
             height,
             corners: geo.corners,
-            startLine: { at: screen[startIdx], angle: tangentAt(screen, startIdx) },
+            startLine: { at: screen[0], angle: tangentAt(screen, 0) },
             source: "circuit",
           });
           return;
         }
 
-        // 서킷 데이터를 못 받으면 주행 좌표로 대체해요. 코너 번호는 못 얹지만 트랙과 차량은 보입니다.
-        const { project, width, height } = makeProjection(pts);
+        // 서킷 데이터가 없는 경우(2026 기준 Madring·쿠알라룸푸르)에만 주행 좌표로 윤곽선을 그려요.
+        // 코너 번호는 못 얹지만 트랙과 차량은 보입니다.
+        const referencePool = usable.filter((l) => !l.is_pit_out_lap);
+        const reference = (referencePool.length > 0 ? referencePool : usable)
+          .slice()
+          .sort((a, b) => a.lap_duration - b.lap_duration)[0];
+        const { start, end } = lapWindow(reference);
+
+        await sleep(400);
+        const raw = await fetchOpenF1(
+          `https://api.openf1.org/v1/location?session_key=${sessionKey}&driver_number=${leaderNumber}` +
+          `&date%3E${toApiDate(start)}&date%3C${toApiDate(end)}`
+        );
+        if (cancelled) return;
+
+        const pts = dedupeConsecutive(cleanLocations(raw)).map((p) => [p.x, p.y]);
+        if (pts.length < 8) {
+          setError("이 세션은 트랙 좌표 데이터가 없어요.");
+          return;
+        }
+
+        const { project, width, height, onTrack } = makeProjection(pts);
         const screen = thinPoints(pts.map(([x, y]) => project(x, y)), 3);
         const d = closedSplinePath(screen);
         if (!d) return;
-        const startIdx = nearestIndex(screen, ...project(startAt[0], startAt[1]));
         setOutline({
           d,
           project,
+          onTrack,
           width,
           height,
           corners: [],
-          startLine: { at: screen[startIdx], angle: tangentAt(screen, startIdx, 1) },
+          startLine: { at: screen[0], angle: tangentAt(screen, 0, 1) },
           source: "location",
         });
       } catch (e) {
@@ -623,6 +648,8 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
   // 선택한 랩의 전체 드라이버 좌표(약 1MB, 요청 1번). 이미 본 랩은 캐시에서 꺼내 씁니다.
   useEffect(() => {
     if (!lapNumber || laps.length === 0) return;
+    // 트랙 밖 좌표를 걸러내려면 서킷 경계가 필요해서 윤곽선이 준비된 뒤에 받아요.
+    if (!outline) return;
     const lap = laps.find((l) => l.lap_number === lapNumber);
     if (!lap) return;
 
@@ -642,7 +669,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
       setError(null);
       try {
         const { start, end, durationMs: dur } = lapWindow(lap);
-        const raw = await fetchJSON(
+        const raw = await fetchOpenF1(
           `https://api.openf1.org/v1/location?session_key=${sessionKey}` +
           `&date%3E${toApiDate(start)}&date%3C${toApiDate(end)}`
         );
@@ -650,9 +677,13 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 
         const base = start.getTime();
         const grouped = {};
-        cleanLocations(raw).forEach((p) => {
-          (grouped[p.driver_number] ||= []).push({ t: new Date(p.date).getTime() - base, x: p.x, y: p.y });
-        });
+        cleanLocations(raw)
+          // 리타이어했거나 개러지에 있는 차의 고정 좌표를 여기서 빼요. 남겨두면 점이
+          // 트랙 밖에 붙박이로 찍히고, 보간이 그 사이를 이으면서 날아갔다 돌아옵니다.
+          .filter((p) => outline.onTrack(p.x, p.y))
+          .forEach((p) => {
+            (grouped[p.driver_number] ||= []).push({ t: new Date(p.date).getTime() - base, x: p.x, y: p.y });
+          });
         Object.keys(grouped).forEach((num) => {
           grouped[num].sort((a, b) => a.t - b.t);
           grouped[num] = dedupeConsecutive(grouped[num]);
@@ -669,7 +700,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
     }
     loadLap();
     return () => { cancelled = true; };
-  }, [lapNumber, laps, sessionKey]);
+  }, [lapNumber, laps, sessionKey, outline]);
 
   // 1배속이 실제 주행 속도예요. 배속을 올리면 같은 시간에 더 많이 진행합니다.
   useEffect(() => {
@@ -718,7 +749,8 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
   }
 
   const currentLap = laps.find((l) => l.lap_number === lapNumber);
-  const ready = outline && tracks;
+  const lapHasNoData = !!tracks && Object.keys(tracks).length === 0;
+  const ready = outline && tracks && !lapHasNoData;
 
   const safetyCarPeriods = safetyCarEvents?.length && laps.length
     ? buildSafetyCarPeriods(safetyCarEvents, laps)
@@ -931,7 +963,13 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
               {lapNumber}랩 좌표를 불러오는 중... (약 1MB)
             </div>
           )}
-          {!loadingLap && (
+          {!loadingLap && lapHasNoData && (
+            // 모나코처럼 일부 랩만 좌표가 있는 세션이 있어요. 빈 화면 대신 이유를 알려줍니다.
+            <div className="text-xs mt-2" style={{ color: SAFETY_YELLOW }}>
+              이 랩은 좌표 데이터가 없어요. 다른 랩을 골라 주세요.
+            </div>
+          )}
+          {!loadingLap && !lapHasNoData && (
             <div className="text-xs mt-2" style={{ color: MUTED }}>
               랩을 고르면 그 랩 동안의 실제 주행 좌표가 재생돼요. 한 번 본 랩은 다시 받지 않아요.
             </div>
@@ -1369,8 +1407,8 @@ export default function F1CosmosHome() {
     async function loadCalendar() {
       try {
         const [sessions, meetings] = await Promise.all([
-          fetchJSON("https://api.openf1.org/v1/sessions?year=2026&session_name=Race"),
-          fetchJSON("https://api.openf1.org/v1/meetings?year=2026"),
+          fetchOpenF1("https://api.openf1.org/v1/sessions?year=2026&session_name=Race"),
+          fetchOpenF1("https://api.openf1.org/v1/meetings?year=2026"),
         ]);
         const meetingMap = {};
         meetings.forEach((m) => { meetingMap[m.meeting_key] = m; });
@@ -1440,7 +1478,7 @@ export default function F1CosmosHome() {
       try {
         // OpenF1 무료 티어는 초당 3회/분당 30회 제한이 있어서, 한꺼번에 몰아서 요청하지 않고
         // 하나씩 순서대로, 사이사이 살짝 텀을 두고 가져와요.
-        const drivers = await fetchJSON(`https://api.openf1.org/v1/drivers?session_key=${selectedSessionKey}`);
+        const drivers = await fetchOpenF1(`https://api.openf1.org/v1/drivers?session_key=${selectedSessionKey}`);
         const driverMap = {};
         drivers.forEach((d) => { driverMap[d.driver_number] = d; });
         const driverColors = {};
@@ -1456,10 +1494,10 @@ export default function F1CosmosHome() {
         });
 
         await sleep(350);
-        const results = await fetchJSON(`https://api.openf1.org/v1/session_result?session_key=${selectedSessionKey}`);
+        const results = await fetchOpenF1(`https://api.openf1.org/v1/session_result?session_key=${selectedSessionKey}`);
 
         await sleep(350);
-        const stints = await fetchJSON(`https://api.openf1.org/v1/stints?session_key=${selectedSessionKey}`);
+        const stints = await fetchOpenF1(`https://api.openf1.org/v1/stints?session_key=${selectedSessionKey}`);
 
         const lastCompound = {};
         stints.forEach((s) => {
@@ -1491,13 +1529,13 @@ export default function F1CosmosHome() {
         resultsDone = true;
 
         await sleep(350);
-        const weatherArr = await fetchJSON(`https://api.openf1.org/v1/weather?session_key=${selectedSessionKey}`);
+        const weatherArr = await fetchOpenF1(`https://api.openf1.org/v1/weather?session_key=${selectedSessionKey}`);
         await sleep(350);
-        const pit = await fetchJSON(`https://api.openf1.org/v1/pit?session_key=${selectedSessionKey}`);
+        const pit = await fetchOpenF1(`https://api.openf1.org/v1/pit?session_key=${selectedSessionKey}`);
         await sleep(350);
-        const radio = await fetchJSON(`https://api.openf1.org/v1/team_radio?session_key=${selectedSessionKey}`);
+        const radio = await fetchOpenF1(`https://api.openf1.org/v1/team_radio?session_key=${selectedSessionKey}`);
         await sleep(350);
-        const raceControl = await fetchJSON(`https://api.openf1.org/v1/race_control?session_key=${selectedSessionKey}`);
+        const raceControl = await fetchOpenF1(`https://api.openf1.org/v1/race_control?session_key=${selectedSessionKey}`);
 
         const weather = weatherArr.length > 0 ? weatherArr[weatherArr.length - 1] : null;
 

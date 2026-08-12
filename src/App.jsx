@@ -326,6 +326,22 @@ const CHECKER_DEPTH = CHECKER_CELL * 2;
 
 const SAFETY_YELLOW = "#F5C518";
 
+// 실시간 순위표 한 줄 높이. 순위가 바뀌면 이 값만큼 위아래로 미끄러지며 자리를 바꿔요.
+const ORDER_ROW_H = 18;
+
+// 어느 시점의 순위는 "그 시각 이전에 마지막으로 기록된 순위"예요.
+// /v1/position 은 순위가 바뀐 순간만 기록하는 이벤트 목록이라, 시각 기준으로 되감을 수 있습니다.
+function orderAt(events, ms) {
+  const latest = new Map();
+  for (const e of events) {
+    if (e.t > ms) break;
+    latest.set(e.num, e.position);
+  }
+  return [...latest.entries()]
+    .sort((a, b) => a[1] - b[1])
+    .map(([num, position]) => ({ num, position }));
+}
+
 // 코너 번호를 트랙 바깥으로 밀어내는 거리(트랙 좌표 단위).
 // 서킷 데이터가 코너마다 주는 angle 방향으로 밀면 번호가 트랙 안쪽으로 들어가지 않아요.
 const CORNER_LABEL_OFFSET = 520;
@@ -545,6 +561,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
   const [loadingLap, setLoadingLap] = useState(false);
   const [error, setError] = useState(null);
   const [lapOpen, setLapOpen] = useState(false);
+  const [positionEvents, setPositionEvents] = useState([]);
 
   const lapCache = useRef({});
   const rafRef = useRef(null);
@@ -556,6 +573,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
     let cancelled = false;
     lapCache.current = {};
     setLaps([]); setLapNumber(null); setOutline(null); setTracks(null);
+    setPositionEvents([]);
     setPlaying(false); setElapsed(0); setError(null);
 
     async function loadTrack() {
@@ -570,6 +588,23 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 
         setLaps(usable);
         setLapNumber(usable[usable.length - 1].lap_number);
+
+        // 순위 변동은 바뀐 순간만 기록돼서 세션 전체를 받아도 60KB 남짓이에요(헝가리 536건).
+        // 순위표가 없어도 트랙맵은 보여야 하니 실패해도 넘어갑니다.
+        await sleep(400);
+        try {
+          const pos = await fetchOpenF1(`https://api.openf1.org/v1/position?session_key=${sessionKey}`);
+          if (!cancelled) {
+            setPositionEvents(
+              pos
+                .map((p) => ({ t: new Date(p.date).getTime(), num: p.driver_number, position: p.position }))
+                .sort((a, b) => a.t - b.t)
+            );
+          }
+        } catch (e) {
+          // 순위표만 비어요.
+        }
+        if (cancelled) return;
 
         // 코너 번호가 트랙 위에 정확히 얹히려면 서킷 윤곽선도 같은 출처여야 해요.
         // 우리 주행 좌표는 헝가로링 기준 한 랩에 26점뿐이라 트랙 최외곽을 놓치는 구간이 있습니다.
@@ -752,16 +787,18 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
   const lapHasNoData = !!tracks && Object.keys(tracks).length === 0;
   const ready = outline && tracks && !lapHasNoData;
 
+  // 재생 위치의 절대 시각. 세이프티카 구간 판정과 순위표가 같은 기준을 씁니다.
+  const nowMs = currentLap ? new Date(currentLap.date_start).getTime() + elapsed : null;
+
   const safetyCarPeriods = safetyCarEvents?.length && laps.length
     ? buildSafetyCarPeriods(safetyCarEvents, laps)
     : [];
 
-  // 재생 위치(랩 시작 시각 + 경과)가 세이프티카 구간 안에 들어가면 표시해요.
-  let activeSafetyCar = null;
-  if (currentLap && safetyCarPeriods.length) {
-    const nowMs = new Date(currentLap.date_start).getTime() + elapsed;
-    activeSafetyCar = safetyCarPeriods.find((p) => nowMs >= p.from && nowMs < p.to) || null;
-  }
+  const activeSafetyCar = nowMs && safetyCarPeriods.length
+    ? safetyCarPeriods.find((p) => nowMs >= p.from && nowMs < p.to) || null
+    : null;
+
+  const liveOrder = nowMs && positionEvents.length ? orderAt(positionEvents, nowMs) : [];
 
   // 세이프티카는 보통 70랩 중 두어 랩뿐이라, 랩 목록에 표시해 두지 않으면 찾아 들어가기 어려워요.
   const safetyCarLaps = new Set();
@@ -899,7 +936,9 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
               {activeSafetyCar.type === "VSC" ? "버추얼 세이프티카" : "세이프티카"}
             </div>
           )}
-          <svg viewBox={`0 0 ${outline.width.toFixed(0)} ${outline.height.toFixed(0)}`} className="w-full h-auto" style={{ maxHeight: "340px" }}>
+          {/* 좁은 화면에선 순위표가 맵을 눌러버려서, 접히면 아래로 내려가게 둡니다. */}
+          <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
+          <svg viewBox={`0 0 ${outline.width.toFixed(0)} ${outline.height.toFixed(0)}`} className="h-auto" style={{ flex: "1 1 240px", minWidth: 0, maxHeight: "380px" }}>
             <defs>
               <pattern id="track-checker" width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} patternUnits="userSpaceOnUse">
                 <rect width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} fill={TEXT} />
@@ -957,6 +996,44 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
               </g>
             ))}
           </svg>
+
+          {liveOrder.length > 0 && (
+            // 각 행을 절대 배치하고 translateY 만 바꿔요. key 가 드라이버 번호라서 순위가 바뀌면
+            // 같은 DOM 노드가 그대로 움직이고, 두 행이 서로 교차하며 자리를 바꾸는 것처럼 보입니다.
+            <div style={{ flex: "0 0 118px", position: "relative", height: `${liveOrder.length * ORDER_ROW_H}px` }}>
+              {liveOrder.map((d, i) => {
+                const info = driversByNumber?.[d.num] || {};
+                const color = info.color || AMBER;
+                return (
+                  <div
+                    key={d.num}
+                    className="absolute left-0 right-0 flex items-center gap-1.5"
+                    style={{
+                      height: `${ORDER_ROW_H}px`,
+                      transform: `translateY(${i * ORDER_ROW_H}px)`,
+                      transition: "transform 450ms cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}
+                  >
+                    <span
+                      className="text-right shrink-0"
+                      style={{ width: "14px", fontSize: "10px", color: MUTED, fontFamily: "ui-monospace, monospace" }}
+                    >
+                      {d.position}
+                    </span>
+                    <span className="shrink-0 rounded-sm" style={{ width: "3px", height: "11px", backgroundColor: color }} />
+                    <span
+                      className="font-bold"
+                      style={{ fontSize: "11px", color: readableAccent(color) || TEXT, letterSpacing: "0.02em" }}
+                    >
+                      {info.code || d.num}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          </div>
+
           {loadingLap && (
             <div className="flex items-center gap-2 text-xs mt-2" style={{ color: MUTED }}>
               <Loader2 size={11} className="animate-spin" />

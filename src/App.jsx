@@ -942,13 +942,17 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           )}
         </div>
 
+        {/*
+          재생 중에 시점을 옮기면 그 자리에서 이어서 재생돼요. 멈추려면 일시정지를 쓰면 됩니다.
+          재생 루프가 setElapsed 를 함수형으로 갱신해서, 여기서 값을 바꿔도 튀지 않아요.
+        */}
         <input
           type="range"
           min={0}
           max={durationMs || 1}
           value={elapsed}
           disabled={!ready}
-          onChange={(e) => { setPlaying(false); setElapsed(Number(e.target.value)); }}
+          onChange={(e) => setElapsed(Number(e.target.value))}
           className="flex-1"
           style={{ accentColor: AMBER, minWidth: "120px" }}
         />

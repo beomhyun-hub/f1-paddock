@@ -302,6 +302,8 @@ function PanelHeader({ icon: Icon, title }) {
 // 전체 드라이버 × 1랩이 약 1MB라서 레이스 전체(약 57MB)를 한 번에 받는 건 무리예요.
 // 그래서 "랩 하나"를 단위로 필요할 때만 받아오고, 한 번 받은 랩은 캐시에 남겨둡니다.
 
+const PLAYBACK_SPEEDS = [1, 2, 4, 0.5];
+
 const TRACK_MAX_W = 560;
 const TRACK_MAX_H = 300;
 const TRACK_PAD = 26;
@@ -428,6 +430,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
   const [durationMs, setDurationMs] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const [loadingLap, setLoadingLap] = useState(false);
   const [error, setError] = useState(null);
   const [lapOpen, setLapOpen] = useState(false);
@@ -533,14 +536,14 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
     return () => { cancelled = true; };
   }, [lapNumber, laps, sessionKey]);
 
-  // 실제 속도(1배속)로 재생해요.
+  // 1배속이 실제 주행 속도예요. 배속을 올리면 같은 시간에 더 많이 진행합니다.
   useEffect(() => {
     if (!playing || durationMs === 0) return;
     let last = performance.now();
     const step = (now) => {
       // 다른 탭에 가 있는 동안엔 rAF가 멈춰요. 돌아왔을 때 그 시간만큼 한 번에 건너뛰지 않도록
-      // 프레임 간격에 상한을 둡니다.
-      const delta = Math.min(now - last, 100);
+      // 실제 경과 시간에 먼저 상한을 두고, 그 뒤에 배속을 곱합니다.
+      const delta = Math.min(now - last, 100) * speed;
       last = now;
       setElapsed((prev) => {
         const next = prev + delta;
@@ -551,7 +554,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
     };
     rafRef.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [playing, durationMs]);
+  }, [playing, durationMs, speed]);
 
   const project = outline?.project;
   const dots = [];
@@ -615,6 +618,25 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
           {playing
             ? <Pause size={13} color={AMBER} fill={AMBER} />
             : <Play size={13} color={AMBER} fill={AMBER} />}
+        </button>
+
+        <button
+          onClick={() => setSpeed((v) => PLAYBACK_SPEEDS[(PLAYBACK_SPEEDS.indexOf(v) + 1) % PLAYBACK_SPEEDS.length])}
+          disabled={!ready}
+          className="flex items-center justify-center rounded-md shrink-0 text-xs font-bold"
+          style={{
+            height: "32px",
+            padding: "0 8px",
+            minWidth: "38px",
+            border: `1px solid ${speed === 1 ? LINE : AMBER}`,
+            backgroundColor: SURFACE_2,
+            color: speed === 1 ? MUTED : AMBER,
+            fontFamily: "ui-monospace, monospace",
+            opacity: ready ? 1 : 0.4,
+          }}
+          aria-label={`재생 속도 ${speed}배속`}
+        >
+          {speed}×
         </button>
 
         <input

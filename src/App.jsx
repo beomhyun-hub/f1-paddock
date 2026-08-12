@@ -328,6 +328,7 @@ const SAFETY_YELLOW = "#F5C518";
 
 // 실시간 순위표 한 줄 높이. 순위가 바뀌면 이 값만큼 위아래로 미끄러지며 자리를 바꿔요.
 const ORDER_ROW_H = 18;
+const ORDER_MOVE_MS = 900;
 
 // 어느 시점의 순위는 "그 시각 이전에 마지막으로 기록된 순위"예요.
 // /v1/position 은 순위가 바뀐 순간만 기록하는 이벤트 목록이라, 시각 기준으로 되감을 수 있습니다.
@@ -800,6 +801,12 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 
   const liveOrder = nowMs && positionEvents.length ? orderAt(positionEvents, nowMs) : [];
 
+  // 렌더 순서는 드라이버 번호로 고정하고, 화면상의 자리는 slot 으로만 넘겨요.
+  // (이유는 아래 순위표 렌더 부분 주석 참고)
+  const orderRows = liveOrder
+    .map((d, slot) => ({ ...d, slot }))
+    .sort((a, b) => a.num - b.num);
+
   // 세이프티카는 보통 70랩 중 두어 랩뿐이라, 랩 목록에 표시해 두지 않으면 찾아 들어가기 어려워요.
   const safetyCarLaps = new Set();
   safetyCarPeriods.length && laps.forEach((l) => {
@@ -998,34 +1005,37 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           </svg>
 
           {liveOrder.length > 0 && (
-            // 각 행을 절대 배치하고 translateY 만 바꿔요. key 가 드라이버 번호라서 순위가 바뀌면
-            // 같은 DOM 노드가 그대로 움직이고, 두 행이 서로 교차하며 자리를 바꾸는 것처럼 보입니다.
+            // 각 행을 절대 배치하고 translateY 로만 자리를 잡아요.
+            // 중요한 건 DOM 순서를 드라이버 번호로 고정하는 것: 화면 순위대로 렌더하면 순위가 바뀔 때
+            // React 가 내려간 행을 insertBefore 로 옮기는데, 재삽입된 노드는 진행 중이던 트랜지션이
+            // 끊겨서 그 행만 애니메이션 없이 튑니다. DOM 을 고정하면 transform 만 바뀌어서
+            // 올라가는 행과 내려가는 행이 똑같이 미끄러지고, 둘이 서로 교차합니다.
             <div style={{ flex: "0 0 118px", position: "relative", height: `${liveOrder.length * ORDER_ROW_H}px` }}>
-              {liveOrder.map((d, i) => {
-                const info = driversByNumber?.[d.num] || {};
+              {orderRows.map(({ num, position, slot }) => {
+                const info = driversByNumber?.[num] || {};
                 const color = info.color || AMBER;
                 return (
                   <div
-                    key={d.num}
+                    key={num}
                     className="absolute left-0 right-0 flex items-center gap-1.5"
                     style={{
                       height: `${ORDER_ROW_H}px`,
-                      transform: `translateY(${i * ORDER_ROW_H}px)`,
-                      transition: "transform 450ms cubic-bezier(0.4, 0, 0.2, 1)",
+                      transform: `translateY(${slot * ORDER_ROW_H}px)`,
+                      transition: `transform ${ORDER_MOVE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
                     }}
                   >
                     <span
                       className="text-right shrink-0"
                       style={{ width: "14px", fontSize: "10px", color: MUTED, fontFamily: "ui-monospace, monospace" }}
                     >
-                      {d.position}
+                      {position}
                     </span>
                     <span className="shrink-0 rounded-sm" style={{ width: "3px", height: "11px", backgroundColor: color }} />
                     <span
                       className="font-bold"
                       style={{ fontSize: "11px", color: readableAccent(color) || TEXT, letterSpacing: "0.02em" }}
                     >
-                      {info.code || d.num}
+                      {info.code || num}
                     </span>
                   </div>
                 );

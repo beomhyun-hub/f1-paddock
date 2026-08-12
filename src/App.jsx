@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Zap, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, History,
+  Zap, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, ChevronLeft, ChevronRight, History,
   ArrowLeft, Thermometer, Droplets, Wind, Flag, Radio, Play, Pause, Info,
   Timer, Loader2, AlertCircle,
 } from "lucide-react";
@@ -588,7 +588,8 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
         if (cancelled || usable.length === 0) return;
 
         setLaps(usable);
-        setLapNumber(usable[usable.length - 1].lap_number);
+        // 1랩부터 시작해요. 스타트 직후가 순위 변동이 가장 많아서 리플레이로 볼 값이 큽니다.
+        setLapNumber(usable[0].lap_number);
 
         // 순위 변동은 바뀐 순간만 기록돼서 세션 전체를 받아도 60KB 남짓이에요(헝가리 536건).
         // 순위표가 없어도 트랙맵은 보여야 하니 실패해도 넘어갑니다.
@@ -785,6 +786,18 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
   }
 
   const currentLap = laps.find((l) => l.lap_number === lapNumber);
+
+  // 랩 목록은 랩 번호 순이라 앞뒤 항목이 곧 이전·다음 랩이에요.
+  const lapIndex = laps.findIndex((l) => l.lap_number === lapNumber);
+  const prevLap = lapIndex > 0 ? laps[lapIndex - 1] : null;
+  const nextLap = lapIndex >= 0 && lapIndex < laps.length - 1 ? laps[lapIndex + 1] : null;
+  const stepLap = (delta) => {
+    const target = delta < 0 ? prevLap : nextLap;
+    if (!target) return;
+    setLapNumber(target.lap_number);
+    setLapOpen(false);
+    setSpeedOpen(false);
+  };
   const lapHasNoData = !!tracks && Object.keys(tracks).length === 0;
   const ready = outline && tracks && !lapHasNoData;
 
@@ -817,9 +830,20 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 
   return (
     <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
-      <PanelHeader icon={MapPin} title="트랙맵" />
+      <PanelHeader icon={MapPin} title="랩 리플레이" />
 
       <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: `1px solid ${LINE}` }}>
+        <button
+          onClick={() => stepLap(-1)}
+          disabled={!prevLap}
+          className="flex items-center justify-center rounded-md shrink-0"
+          style={{ width: "32px", height: "32px", border: `1px solid ${LINE}`, backgroundColor: SURFACE_2, opacity: prevLap ? 1 : 0.35 }}
+          aria-label="이전 랩"
+          title={prevLap ? `${prevLap.lap_number}랩` : "첫 랩이에요"}
+        >
+          <ChevronLeft size={15} color={prevLap ? TEXT : MUTED} />
+        </button>
+
         <div className="relative">
           <button
             onClick={() => { setLapOpen((v) => !v); setSpeedOpen(false); }}
@@ -859,6 +883,17 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             </div>
           )}
         </div>
+
+        <button
+          onClick={() => stepLap(1)}
+          disabled={!nextLap}
+          className="flex items-center justify-center rounded-md shrink-0"
+          style={{ width: "32px", height: "32px", border: `1px solid ${LINE}`, backgroundColor: SURFACE_2, opacity: nextLap ? 1 : 0.35 }}
+          aria-label="다음 랩"
+          title={nextLap ? `${nextLap.lap_number}랩` : "마지막 랩이에요"}
+        >
+          <ChevronRight size={15} color={nextLap ? TEXT : MUTED} />
+        </button>
 
         <button
           onClick={() => {

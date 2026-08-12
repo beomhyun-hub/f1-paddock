@@ -304,6 +304,11 @@ function PanelHeader({ icon: Icon, title }) {
 
 const PLAYBACK_SPEEDS = [1, 2, 4, 0.5];
 
+// 드라이버 점 반지름과, 점 위쪽 테두리에서 코드 라벨까지 띄울 간격.
+// 점 크기를 바꿔도 라벨이 같은 간격으로 따라오도록 반지름과 분리해 뒀어요.
+const DOT_R = 5.6;
+const DOT_LABEL_GAP = 4;
+
 const TRACK_MAX_W = 560;
 const TRACK_MAX_H = 300;
 const TRACK_PAD = 26;
@@ -668,8 +673,19 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber }) {
             <path d={outline.d} fill="none" stroke={SURFACE_2} strokeWidth="10" strokeLinejoin="round" strokeLinecap="round" />
             {dots.map((p) => (
               <g key={p.num}>
-                <circle cx={p.cx} cy={p.cy} r="7" fill={p.color} stroke={ASPHALT} strokeWidth="1.5" />
-                <text x={p.cx} y={p.cy - 11} textAnchor="middle" fontSize="10" fontWeight="700" fill={readableAccent(p.color) || TEXT} fontFamily="ui-monospace, monospace">{p.code}</text>
+                <circle cx={p.cx} cy={p.cy} r={DOT_R} fill={p.color} stroke={ASPHALT} strokeWidth="1.5" />
+                <text
+                  x={p.cx}
+                  y={p.cy - DOT_R - DOT_LABEL_GAP}
+                  textAnchor="middle"
+                  fontSize="10.5"
+                  fontWeight="700"
+                  fill={readableAccent(p.color) || TEXT}
+                  fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
+                  letterSpacing="0.3"
+                >
+                  {p.code}
+                </text>
               </g>
             ))}
           </svg>

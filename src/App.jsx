@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Zap, Warehouse, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, ChevronLeft, ChevronRight, History,
+  Warehouse, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, ChevronLeft, ChevronRight, History,
   ArrowLeft, Thermometer, Droplets, Wind, Flag, Radio, Play, Pause, Info,
   Timer, Loader2, AlertCircle,
 } from "lucide-react";
@@ -14,7 +14,8 @@ const MUTED = "#8B8D92";
 const LINE = "#2A2D34";
 
 const TABS = [
-  { id: "live", label: "라이브 타이밍", icon: Zap },
+  // 실시간 중계가 아니라 이미 끝난 세션을 되짚어 보는 화면이에요. 체커드 플래그가 그 성격에 맞습니다.
+  { id: "race", label: "레이스 리뷰", icon: Flag },
   { id: "cal", label: "캘린더", icon: CalendarDays },
   { id: "blog", label: "블로그", icon: PenLine },
 ];
@@ -1514,7 +1515,7 @@ function BlogTab() {
 }
 
 export default function F1CosmosHome() {
-  const [tab, setTab] = useState("live");
+  const [tab, setTab] = useState("race");
 
   const [raceSessions, setRaceSessions] = useState(FALLBACK_RACE_SESSIONS);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -1757,8 +1758,8 @@ export default function F1CosmosHome() {
         </nav>
       </header>
 
-      <main className={`px-4 py-8 mx-auto sm:px-6 ${tab === "live" ? "max-w-6xl" : "max-w-3xl"}`}>
-        {tab === "live" && (
+      <main className={`px-4 py-8 mx-auto sm:px-6 ${tab === "race" ? "max-w-6xl" : "max-w-3xl"}`}>
+        {tab === "race" && (
           loadingSessions ? <LoadingBlock label="경기 목록을 불러오는 중..." /> :
           sessionsError ? <ErrorBlock message={sessionsError} /> :
           <LiveTab raceSessions={raceSessions} selectedSessionKey={selectedSessionKey} setSelectedSessionKey={setSelectedSessionKey} sessionData={sessionData} />

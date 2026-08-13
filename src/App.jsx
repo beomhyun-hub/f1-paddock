@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
+// Phosphor 로 옮겼어요. 굵기는 weight 로 조절합니다(lucide 의 strokeWidth 는 안 먹어요).
+// 체커기와 일반 깃발을 따로 씁니다 - "레이스 리뷰"는 완주, "레이스 컨트롤"은 황/적기 신호라
+// 같은 아이콘을 쓰면 두 패널이 같은 얘기를 하는 것처럼 보였습니다.
 import {
-  Warehouse, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, ChevronLeft, ChevronRight, History,
-  ArrowLeft, Thermometer, Droplets, Wind, Flag, Radio, Play, Pause, Info,
-  Timer, Loader2, AlertCircle, Sun, Moon,
-} from "lucide-react";
+  Garage, CalendarDots, PencilSimpleLine, MapPin, CaretDown, CaretLeft, CaretRight,
+  ClockCounterClockwise, ArrowLeft, Thermometer, Drop, Wind, FlagCheckered, Flag, Radio,
+  Play, Pause, Info, Timer, CircleNotch, WarningCircle, Sun, Moon,
+} from "@phosphor-icons/react";
 
 // 실제 색값은 index.css 의 :root 토큰에 있어요. 여기선 이름만 가리키게 두면
 // 테마를 바꿔도 리렌더 없이 브라우저가 알아서 전부 다시 칠해 줍니다.
@@ -34,9 +37,9 @@ function useIsLight() {
 
 const TABS = [
   // 실시간 중계가 아니라 이미 끝난 세션을 되짚어 보는 화면이에요. 체커드 플래그가 그 성격에 맞습니다.
-  { id: "race", label: "레이스 리뷰", icon: Flag },
-  { id: "cal", label: "캘린더", icon: CalendarDays },
-  { id: "blog", label: "블로그", icon: PenLine },
+  { id: "race", label: "레이스 리뷰", icon: FlagCheckered },
+  { id: "cal", label: "캘린더", icon: CalendarDots },
+  { id: "blog", label: "블로그", icon: PencilSimpleLine },
 ];
 
 const TIRE_COLORS = {
@@ -336,7 +339,7 @@ function LoadingBlock({ label, shape = "rows", rows = 4 }) {
 function ErrorBlock({ message }) {
   return (
     <div className="flex items-center gap-2 py-8 justify-center text-sm" style={{ color: DANGER }}>
-      <AlertCircle size={16} />
+      <WarningCircle size={16} />
       {message || "데이터를 불러오지 못했어요."}
     </div>
   );
@@ -347,7 +350,7 @@ function WeatherBar({ weather }) {
   const items = [
     { icon: Thermometer, label: "기온", value: `${weather.air_temperature}°C` },
     { icon: Thermometer, label: "노면", value: `${weather.track_temperature}°C` },
-    { icon: Droplets, label: "습도", value: `${weather.humidity}%` },
+    { icon: Drop, label: "습도", value: `${weather.humidity}%` },
     { icon: Wind, label: "풍속", value: `${weather.wind_speed}km/h` },
   ];
   return (
@@ -913,7 +916,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           aria-label="이전 랩"
           title={prevLap ? `${prevLap.lap_number}랩` : "첫 랩이에요"}
         >
-          <ChevronLeft size={15} style={{ color: prevLap ? TEXT : MUTED }} />
+          <CaretLeft size={15} style={{ color: prevLap ? TEXT : MUTED }} />
         </button>
 
         <div className="relative">
@@ -924,7 +927,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             style={{ color: laps.length === 0 ? MUTED : TEXT, border: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}
           >
             {lapNumber ? `${lapNumber}랩` : "랩 선택"}
-            <ChevronDown size={14} />
+            <CaretDown size={14} />
           </button>
           {lapOpen && (
             <div className="absolute left-0 mt-1 w-40 rounded-md overflow-hidden z-10 max-h-64 overflow-y-auto" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
@@ -964,7 +967,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           aria-label="다음 랩"
           title={nextLap ? `${nextLap.lap_number}랩` : "마지막 랩이에요"}
         >
-          <ChevronRight size={15} style={{ color: nextLap ? TEXT : MUTED }} />
+          <CaretRight size={15} style={{ color: nextLap ? TEXT : MUTED }} />
         </button>
 
         <button
@@ -977,10 +980,11 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           style={{ width: "32px", height: "32px", border: `1px solid ${LINE}`, backgroundColor: SURFACE_2, opacity: ready ? 1 : 0.4 }}
           aria-label={playing ? "일시정지" : "재생"}
         >
-          {/* fill 은 SVG 속성이라 var() 를 못 읽어요. currentColor 로 두고 색은 style 로 넘깁니다. */}
+          {/* Phosphor 는 채움을 fill 속성이 아니라 weight 로 정합니다. 색은 currentColor 라
+              style 의 color 를 그대로 따라와요. */}
           {playing
-            ? <Pause size={13} fill="currentColor" style={{ color: ACCENT }} />
-            : <Play size={13} fill="currentColor" style={{ color: ACCENT }} />}
+            ? <Pause size={13} weight="fill" style={{ color: ACCENT }} />
+            : <Play size={13} weight="fill" style={{ color: ACCENT }} />}
         </button>
 
         <div className="relative shrink-0">
@@ -997,7 +1001,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             aria-label={`재생 속도 ${speed}배속`}
           >
             {speed}×
-            <ChevronDown size={14} />
+            <CaretDown size={14} />
           </button>
           {speedOpen && (
             <div className="absolute left-0 mt-1 w-24 rounded-md overflow-hidden z-10" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
@@ -1051,7 +1055,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
               className="absolute left-4 top-4 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold"
               style={{ backgroundColor: SAFETY_YELLOW, color: INK }}
             >
-              <AlertCircle size={12} />
+              <WarningCircle size={12} />
               {activeSafetyCar.type === "VSC" ? "버추얼 세이프티카" : "세이프티카"}
             </div>
           )}
@@ -1159,7 +1163,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 
           {loadingLap && (
             <div className="flex items-center gap-2 text-xs mt-2" style={{ color: MUTED }}>
-              <Loader2 size={11} className="animate-spin" />
+              <CircleNotch size={11} className="animate-spin" />
               {lapNumber}랩 좌표를 불러오는 중... (약 1MB)
             </div>
           )}
@@ -1300,9 +1304,10 @@ function TeamRadioPanel({ items, loading, error }) {
                   >
                     {(() => {
                       const iconColor = r.url ? contrastIconColor(r.teamColor) : MUTED;
+                      // 오디오가 없는 행은 속을 비워서 "누를 수 없다"를 모양으로 보여줍니다.
                       return playingIdx === i
-                        ? <Pause size={12} fill="currentColor" style={{ color: iconColor }} />
-                        : <Play size={12} fill={r.url ? "currentColor" : "none"} style={{ color: iconColor }} />;
+                        ? <Pause size={12} weight="fill" style={{ color: iconColor }} />
+                        : <Play size={12} weight={r.url ? "fill" : "regular"} style={{ color: iconColor }} />;
                     })()}
                   </button>
                   {r.photo && (
@@ -1321,7 +1326,7 @@ function TeamRadioPanel({ items, loading, error }) {
                 </div>
                 {caption?.loading && (
                   <div className="flex items-center gap-1.5 text-xs pl-8 mt-2" style={{ color: MUTED }}>
-                    <Loader2 size={11} className="animate-spin" />
+                    <CircleNotch size={11} className="animate-spin" />
                     자막 만드는 중...
                   </div>
                 )}
@@ -1405,9 +1410,9 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
               className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md font-medium"
               style={{ color: MUTED, border: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}
             >
-              <History size={14} />
+              <ClockCounterClockwise size={14} />
               이전 경기들
-              <ChevronDown size={14} />
+              <CaretDown size={14} />
             </button>
 
             {pastOpen && (
@@ -1854,7 +1859,7 @@ export default function F1CosmosHome() {
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: ACCENT }}>
             {/* 팀 개러지. 패독을 채우는 건물이에요. */}
-            <Warehouse size={16} style={{ color: ON_ACCENT }} strokeWidth={2.5} />
+            <Garage size={16} style={{ color: ON_ACCENT }} weight="bold" />
           </div>
           {/* 로고는 자간을 벌리면 흐물흐물해져요. 살짝 키우고 조여서 덩어리로 읽히게 둡니다.
               헤더라 크게 갈 수는 없어서 17px 선에서 멈춥니다. */}

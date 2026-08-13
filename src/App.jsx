@@ -982,9 +982,10 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
               {activeSafetyCar.type === "VSC" ? "버추얼 세이프티카" : "세이프티카"}
             </div>
           )}
-          {/* 좁은 화면에선 순위표가 맵을 눌러버려서, 접히면 아래로 내려가게 둡니다. */}
-          <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
-          <svg viewBox={`0 0 ${outline.width.toFixed(0)} ${outline.height.toFixed(0)}`} className="h-auto" style={{ flex: "1 1 240px", minWidth: 0, maxHeight: "380px" }}>
+          {/* 순위표는 맵 옆에 붙어 있어야 "지금 몇 위인지"를 같이 볼 수 있어요.
+              그래서 줄바꿈으로 아래로 내리지 않고, 좁은 화면에선 순위표 폭만 줄여 맵과 나란히 둡니다. */}
+          <div className="flex items-start gap-2 flex-nowrap sm:gap-3">
+          <svg viewBox={`0 0 ${outline.width.toFixed(0)} ${outline.height.toFixed(0)}`} className="h-auto flex-1 basis-0 min-w-0 sm:basis-60" style={{ maxHeight: "380px" }}>
             <defs>
               <pattern id="track-checker" width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} patternUnits="userSpaceOnUse">
                 <rect width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} fill={TEXT} />
@@ -1049,7 +1050,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             // React 가 내려간 행을 insertBefore 로 옮기는데, 재삽입된 노드는 진행 중이던 트랜지션이
             // 끊겨서 그 행만 애니메이션 없이 튑니다. DOM 을 고정하면 transform 만 바뀌어서
             // 올라가는 행과 내려가는 행이 똑같이 미끄러지고, 둘이 서로 교차합니다.
-            <div style={{ flex: "0 0 118px", position: "relative", height: `${liveOrder.length * ORDER_ROW_H}px` }}>
+            <div className="shrink-0 grow-0 basis-[74px] sm:basis-[118px]" style={{ position: "relative", height: `${liveOrder.length * ORDER_ROW_H}px` }}>
               {orderRows.map(({ num, position, slot }) => {
                 const info = driversByNumber?.[num] || {};
                 const color = info.color || ACCENT;
@@ -1279,6 +1280,12 @@ function TeamRadioPanel({ items, loading, error }) {
   );
 }
 
+// 결과표의 열 배치. 헤더와 각 행이 반드시 같은 문자열을 써야 열이 어긋나지 않아요.
+// 모바일(sm 미만)에서는 12등분 그리드가 너무 좁아서 드라이버 칸(팀 배지+코드)이
+// 간격 칸을 덮어버립니다. 그래서 폭이 필요한 만큼만 고정하고 드라이버 칸이 남는 폭을 갖게 했어요.
+const RESULT_GRID =
+  "grid grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_1.75rem_2.25rem] gap-x-2 sm:grid-cols-12 sm:gap-x-0";
+
 function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sessionData }) {
   const [pastOpen, setPastOpen] = useState(false);
   const latestSessionKey = raceSessions.length > 0 ? raceSessions[0].session_key : null;
@@ -1347,23 +1354,24 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
       <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "flex-start" }}>
         <div style={{ flex: "2 1 420px", display: "flex", flexDirection: "column", gap: "16px" }}>
           <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
-            <div className="grid grid-cols-12 px-4 py-2 text-xs font-medium" style={{ color: MUTED, borderBottom: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}>
-              <div className="col-span-1">P</div>
-              <div className="col-span-3">드라이버</div>
-              <div className="col-span-3">간격</div>
-              <div className="col-span-3">랩 수</div>
-              <div className="col-span-2">타이어</div>
+            <div className={`${RESULT_GRID} px-3 py-2 text-xs font-medium sm:px-4`} style={{ color: MUTED, borderBottom: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}>
+              <div className="sm:col-span-1">P</div>
+              <div className="sm:col-span-3">드라이버</div>
+              <div className="sm:col-span-3">간격</div>
+              <div className="sm:col-span-3">
+                랩<span className="hidden sm:inline"> 수</span>
+              </div>
+              <div className="sm:col-span-2">타이어</div>
             </div>
             {sessionData.loadingResults ? <LoadingBlock /> : sessionData.resultsError ? <ErrorBlock message={sessionData.resultsError} /> : (
               sessionData.rows.map((d, i) => (
-                <div key={d.code} className="grid grid-cols-12 px-4 py-3 items-center text-sm" style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                  <div className="col-span-1" style={{ color: d.pos === 1 ? ACCENT : TEXT }}>{d.pos}</div>
-                  <div className="col-span-3 flex items-center gap-2 font-bold" style={{ color: readableAccent(d.teamColor) || TEXT, fontSize: "15px", fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "0.01em" }}>
+                <div key={d.code} className={`${RESULT_GRID} px-3 py-2.5 items-center text-sm sm:px-4 sm:py-3`} style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                  <div className="sm:col-span-1" style={{ color: d.pos === 1 ? ACCENT : TEXT }}>{d.pos}</div>
+                  <div className="sm:col-span-3 flex items-center gap-1.5 sm:gap-2 font-bold min-w-0 text-[14px] sm:text-[15px]" style={{ color: readableAccent(d.teamColor) || TEXT, fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "0.01em" }}>
                     {d.team && (
                       <span
-                        className="flex items-center justify-center rounded shrink-0"
+                        className="flex items-center justify-center rounded shrink-0 min-w-[30px] sm:min-w-[34px]"
                         style={{
-                          minWidth: "34px",
                           height: "20px",
                           padding: "0 4px",
                           fontSize: "10px",
@@ -1378,19 +1386,20 @@ function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sess
                       </span>
                     )}
                     {d.photo && (
+                      /* 좁은 화면에선 팀 배지만으로도 구분이 되니, 폭을 드라이버 코드에 양보해요. */
                       <img
                         src={d.photo}
                         alt=""
-                        className="w-7 h-7 rounded-full object-cover shrink-0"
+                        className="w-7 h-7 rounded-full object-cover shrink-0 hidden sm:block"
                         style={{ backgroundColor: SURFACE_2 }}
                         onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />
                     )}
-                    {d.code}
+                    <span className="truncate">{d.code}</span>
                   </div>
-                  <div className="col-span-3" style={{ color: MUTED }}>{d.gap}</div>
-                  <div className="col-span-3" style={{ color: TEXT }}>{d.laps}</div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-3 truncate text-[12px] sm:text-sm" style={{ color: MUTED }}>{d.gap}</div>
+                  <div className="sm:col-span-3" style={{ color: TEXT }}>{d.laps}</div>
+                  <div className="sm:col-span-2">
                     <span
                       className="flex items-center justify-center rounded-full"
                       style={{
@@ -1723,7 +1732,7 @@ export default function F1CosmosHome() {
 
   return (
     <div className="w-full min-h-screen" style={{ backgroundColor: ASPHALT, fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      <header className="flex items-center justify-between px-6 py-4 flex-wrap gap-4" style={{ borderBottom: `1px solid ${LINE}` }}>
+      <header className="flex items-center justify-between px-4 py-4 flex-wrap gap-3 sm:px-6 sm:gap-4" style={{ borderBottom: `1px solid ${LINE}` }}>
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: ACCENT }}>
             {/* 팀 개러지. 패독을 채우는 건물이에요. */}
@@ -1739,7 +1748,7 @@ export default function F1CosmosHome() {
             const Icon = t.icon;
             const active = tab === t.id;
             return (
-              <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium transition-colors" style={{ color: active ? ACCENT : MUTED, backgroundColor: active ? SURFACE : "transparent" }}>
+              <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-1.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap sm:px-3.5" style={{ color: active ? ACCENT : MUTED, backgroundColor: active ? SURFACE : "transparent" }}>
                 <Icon size={15} />
                 {t.label}
               </button>
@@ -1748,7 +1757,7 @@ export default function F1CosmosHome() {
         </nav>
       </header>
 
-      <main className={`px-6 py-8 mx-auto ${tab === "live" ? "max-w-6xl" : "max-w-3xl"}`}>
+      <main className={`px-4 py-8 mx-auto sm:px-6 ${tab === "live" ? "max-w-6xl" : "max-w-3xl"}`}>
         {tab === "live" && (
           loadingSessions ? <LoadingBlock label="경기 목록을 불러오는 중..." /> :
           sessionsError ? <ErrorBlock message={sessionsError} /> :
@@ -1758,7 +1767,7 @@ export default function F1CosmosHome() {
         {tab === "blog" && <BlogTab />}
       </main>
 
-      <footer className="px-6 py-4 text-xs text-center" style={{ color: MUTED, borderTop: `1px solid ${LINE}` }}>
+      <footer className="px-4 py-4 text-xs text-center sm:px-6" style={{ color: MUTED, borderTop: `1px solid ${LINE}` }}>
         본 서비스는 비공식 프로젝트이며 포뮬러 1 관련 회사와 무관합니다. 데이터 제공: OpenF1 (비공식)
       </footer>
     </div>

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, createContext, useContext } from "react";
 // 같은 아이콘을 쓰면 두 패널이 같은 얘기를 하는 것처럼 보였습니다.
 import {
   Garage, CalendarDots, PencilSimpleLine, MapPin, CaretDown, CaretLeft, CaretRight,
-  ClockCounterClockwise, ArrowLeft, Thermometer, Drop, Wind, FlagCheckered, Flag, Radio,
+  ClockCounterClockwise, ArrowLeft, Thermometer, Drop, Wind, FlagCheckered, Flag, Headset,
   Play, Pause, Info, Timer, CircleNotch, WarningCircle, Sun, Moon,
 } from "@phosphor-icons/react";
 
@@ -1286,7 +1286,9 @@ function TeamRadioPanel({ items, loading, error }) {
 
   return (
     <div className="panel">
-      <PanelHeader icon={Radio} title="팀 라디오" />
+      {/* 팀 라디오는 드라이버와 피트월이 주고받는 교신이라, 수신기(Radio)보다
+          붐 마이크 달린 헤드셋이 그 장면에 가깝습니다. */}
+      <PanelHeader icon={Headset} title="팀 라디오" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
         <div className="scroll-panel" style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>이 세션엔 공개된 팀 라디오가 없어요.</div>}

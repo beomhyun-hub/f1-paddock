@@ -1287,7 +1287,7 @@ function TeamRadioPanel({ items, loading, error }) {
 const RESULT_GRID =
   "grid grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_1.75rem_2.25rem] gap-x-2 sm:grid-cols-12 sm:gap-x-0";
 
-function LiveTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sessionData }) {
+function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sessionData }) {
   const [pastOpen, setPastOpen] = useState(false);
   const latestSessionKey = raceSessions.length > 0 ? raceSessions[0].session_key : null;
   const isLatest = selectedSessionKey === latestSessionKey;
@@ -1762,7 +1762,7 @@ export default function F1CosmosHome() {
         {tab === "race" && (
           loadingSessions ? <LoadingBlock label="경기 목록을 불러오는 중..." /> :
           sessionsError ? <ErrorBlock message={sessionsError} /> :
-          <LiveTab raceSessions={raceSessions} selectedSessionKey={selectedSessionKey} setSelectedSessionKey={setSelectedSessionKey} sessionData={sessionData} />
+          <RaceReviewTab raceSessions={raceSessions} selectedSessionKey={selectedSessionKey} setSelectedSessionKey={setSelectedSessionKey} sessionData={sessionData} />
         )}
         {tab === "cal" && <CalendarTab upcoming={upcoming} loading={loadingUpcoming} error={upcomingError} />}
         {tab === "blog" && <BlogTab />}

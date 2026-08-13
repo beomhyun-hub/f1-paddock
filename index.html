@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>F1 패독</title>
+    <!--
+      테마를 리액트가 뜬 뒤에 정하면 첫 프레임이 반대 테마로 한 번 번쩍여요.
+      저장된 선택(없으면 OS 설정)을 첫 페인트 전에 <html> 에 붙여 둡니다.
+    -->
+    <script>
+      (function () {
+        var theme = "dark";
+        try {
+          var saved = localStorage.getItem("f1p-theme");
+          if (saved === "light" || saved === "dark") {
+            theme = saved;
+          } else if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+            theme = "light";
+          }
+        } catch (e) {
+          // 프라이빗 모드처럼 localStorage 를 못 읽는 환경에선 기본값(다크)으로 둬요.
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,10 +1,81 @@
+/*
+  Pretendard 는 dynamic-subset 을 씁니다. 통짜 파일은 1.96MB 라 첫 로드에 다 받으면 부담인데,
+  이 버전은 unicode-range 로 92개 청크(평균 31KB)로 갈라져 있어서 화면에 실제로 나온 글자
+  범위만 받아요. 한글 사이트에서 체감 차이가 큽니다.
+*/
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+  색은 전부 여기 토큰으로만 정의해요. App.jsx 의 색 상수는 var(--...) 문자열이라
+  테마가 바뀌면 자바스크립트가 다시 그리지 않아도 화면 전체가 같이 바뀝니다.
+  data-theme 은 index.html 의 인라인 스크립트가 첫 페인트 전에 붙여줘요(깜빡임 방지).
+*/
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --asphalt: #FAF9F6;
+  --surface: #F0EDE6;
+  --surface-2: #EAE7DF;
+  /* 액센트는 F1 레드 계열 한 가지만 씁니다. 공식 레드(#E10600)는 채도가 100%라
+     넓은 면적에 쓰면 눈이 아파서, 색상각은 그대로 두고 채도만 69%로 낮춘 값이에요.
+     배경/패널/패널2 전부에서 대비 4.5 이상 나오는 걸 확인하고 골랐습니다. */
+  --accent: #B32821;
+  --on-accent: #FFFFFF;
+  --text: #1B1C21;
+  --muted: #63656C;
+  --line: #DAD6CC;
+  /* 에러색도 같은 레드 계열이라 액센트와 붙어 보일 수 있어서 명도를 10%p 낮춰 둡니다. */
+  --danger: #8C1D17;
+  /* 트랙 리본은 배경과 붙어 보이면 안 돼서 표면색과 따로 둬요. */
+  --track-edge: #C7C2B6;
+  --track-fill: #E6E2D8;
+  --scroll-thumb: #C0BBB0;
+  /* 그림자에 순수 검정을 쓰면 크림색 배경 위에서 회색 때처럼 보여요.
+     배경의 노란기를 살짝 섞어 같은 색 계열로 가라앉게 만듭니다. */
+  --shadow-sm: 0 1px 2px rgba(72, 60, 40, 0.06);
+  --shadow-md: 0 2px 4px rgba(72, 60, 40, 0.07), 0 6px 16px rgba(72, 60, 40, 0.06);
+  /* 스켈레톤이 훑고 지나가는 하이라이트 색 */
+  --skeleton-base: #E4E0D7;
+  --skeleton-shine: #F3F0EA;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --asphalt: #0B0C10;
+  --surface: #16181D;
+  --surface-2: #1D2027;
+  /* 다크에서는 어두운 배경 위로 떠야 해서 라이트보다 밝은 레드를 씁니다.
+     밝히면 채도가 같이 올라가는데, 채도 78%를 넘지 않으면서 --surface-2(#1D2027)
+     위에서도 4.5를 넘기는 값이 이겁니다. 더 밝히면 채도 기준을 넘겨요. */
+  --accent: #E9554D;
+  --on-accent: #0B0C10;
+  --text: #E8E6E1;
+  --muted: #8B8D92;
+  --line: #2A2D34;
+  /* 다크에서는 반대로 액센트보다 밝게 띄워야 에러 텍스트가 구분됩니다(명도차 18%p). */
+  --danger: #FF9C93;
+  --track-edge: #2A2D34;
+  --track-fill: #1D2027;
+  --scroll-thumb: #4A4E58;
+  /* 다크에서는 그림자를 더 깊게 깔아야 패널이 배경에서 떨어져 보입니다. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.45), 0 6px 16px rgba(0, 0, 0, 0.35);
+  --skeleton-base: #1D2027;
+  --skeleton-shine: #282C34;
+}
+
+html,
+body {
+  background-color: var(--asphalt);
+}
+
 .scroll-panel {
   scrollbar-width: thin;
-  scrollbar-color: #4A4E58 #16181D;
+  scrollbar-color: var(--scroll-thumb) transparent;
 }
 
 .scroll-panel::-webkit-scrollbar {
@@ -12,14 +83,106 @@
 }
 
 .scroll-panel::-webkit-scrollbar-track {
-  background: #16181D;
+  background: transparent;
 }
 
 .scroll-panel::-webkit-scrollbar-thumb {
-  background-color: #4A4E58;
+  background-color: var(--scroll-thumb);
   border-radius: 4px;
 }
 
 .scroll-panel::-webkit-scrollbar-thumb:hover {
-  background-color: #A78BFA;
+  background-color: var(--accent);
+}
+
+/* --- 상호작용 상태 -----------------------------------------------------------
+   App.jsx 를 건드리지 않으려고 요소 선택자로 겁니다. 버튼이 전부 <button> 이라
+   여기서 한 번에 처리돼요. 색은 토큰을 쓰니 테마 전환에도 그대로 따라옵니다. */
+
+button,
+[role="button"],
+a,
+select,
+summary {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease,
+    box-shadow 200ms ease, transform 120ms ease, opacity 200ms ease;
+}
+
+/* 눌렀을 때 살짝 들어가야 물리적으로 눌린 느낌이 납니다. */
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 키보드 사용자에게만 링을 보여줍니다(:focus 가 아니라 :focus-visible).
+   마우스로 눌렀을 때까지 링이 남는 걸 막으려는 거예요. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* --- 패널 -------------------------------------------------------------------
+   같은 모양의 컨테이너가 App.jsx 여섯 군데에 인라인으로 반복돼 있어서 클래스로 묶었어요.
+   테두리만 있으면 배경에 눌러붙어 보여서 배경색을 탄 그림자를 아주 얕게 깝니다.
+   반경은 안쪽 요소(4px)보다 바깥이 커야 겹칠 때 자연스러워서 10px 로 뒀어요. */
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* --- 스켈레톤 ---------------------------------------------------------------
+   빙글빙글 도는 스피너 대신 실제 들어올 내용의 형태로 자리를 잡아 둡니다.
+   레이아웃이 밀리지 않아서 데이터가 도착해도 화면이 튀지 않아요. */
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--skeleton-base) 0%,
+    var(--skeleton-shine) 40%,
+    var(--skeleton-base) 80%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -150% 0;
+  }
+}
+
+/* 움직임을 줄이도록 설정한 사용자에게는 애니메이션을 끕니다. 스켈레톤은
+   흐르지 않고 단색 판으로만 남아요(자리는 그대로 잡아 줍니다). */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .skeleton {
+    background-image: none;
+    background-color: var(--skeleton-base);
+  }
 }

@@ -1,23 +1,45 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
+// Phosphor 로 옮겼어요. 굵기는 weight 로 조절합니다(lucide 의 strokeWidth 는 안 먹어요).
+// 체커기와 일반 깃발을 따로 씁니다 - "레이스 리뷰"는 완주, "레이스 컨트롤"은 황/적기 신호라
+// 같은 아이콘을 쓰면 두 패널이 같은 얘기를 하는 것처럼 보였습니다.
 import {
-  Warehouse, CalendarDays, PenLine, Circle, MapPin, Clock, ChevronDown, ChevronLeft, ChevronRight, History,
-  ArrowLeft, Thermometer, Droplets, Wind, Flag, Radio, Play, Pause, Info,
-  Timer, Loader2, AlertCircle,
-} from "lucide-react";
+  Garage, CalendarDots, PencilSimpleLine, MapPin, CaretDown, CaretLeft, CaretRight,
+  ClockCounterClockwise, ArrowLeft, Thermometer, Drop, Wind, FlagCheckered, Flag, Headset,
+  Play, Pause, Info, Timer, CircleNotch, WarningCircle, Sun, Moon,
+} from "@phosphor-icons/react";
 
-const ASPHALT = "#0B0C10";
-const SURFACE = "#16181D";
-const SURFACE_2 = "#1D2027";
-const ACCENT = "#A78BFA";
-const TEXT = "#E8E6E1";
-const MUTED = "#8B8D92";
-const LINE = "#2A2D34";
+// 실제 색값은 index.css 의 :root 토큰에 있어요. 여기선 이름만 가리키게 두면
+// 테마를 바꿔도 리렌더 없이 브라우저가 알아서 전부 다시 칠해 줍니다.
+// 주의: SVG 의 fill/stroke "속성"에는 var() 가 안 먹어요. 그런 자리는 style 로 넘겨야 합니다.
+const ASPHALT = "var(--asphalt)";
+const SURFACE = "var(--surface)";
+const SURFACE_2 = "var(--surface-2)";
+const ACCENT = "var(--accent)";
+const ON_ACCENT = "var(--on-accent)";
+const TEXT = "var(--text)";
+const MUTED = "var(--muted)";
+const LINE = "var(--line)";
+const DANGER = "var(--danger)";
+const TRACK_EDGE = "var(--track-edge)";
+const TRACK_FILL = "var(--track-fill)";
+
+// 팀 컬러나 세이프티카 노랑처럼 배경색이 테마와 상관없이 고정인 자리에는
+// 토큰 대신 이 고정 잉크색을 써요. ASPHALT 를 쓰면 라이트 모드에서 흰 글씨가 됩니다.
+const INK = "#0B0C10";
+
+const THEME_KEY = "f1p-theme";
+
+const ThemeContext = createContext("dark");
+
+function useIsLight() {
+  return useContext(ThemeContext) === "light";
+}
 
 const TABS = [
   // 실시간 중계가 아니라 이미 끝난 세션을 되짚어 보는 화면이에요. 체커드 플래그가 그 성격에 맞습니다.
-  { id: "race", label: "레이스 리뷰", icon: Flag },
-  { id: "cal", label: "캘린더", icon: CalendarDays },
-  { id: "blog", label: "블로그", icon: PenLine },
+  { id: "race", label: "레이스 리뷰", icon: FlagCheckered },
+  { id: "cal", label: "캘린더", icon: CalendarDots },
+  { id: "blog", label: "블로그", icon: PencilSimpleLine },
 ];
 
 const TIRE_COLORS = {
@@ -46,6 +68,9 @@ const GP_NAME_KO = {
   "Emilia Romagna Grand Prix": "에밀리아로마냐 그랑프리",
   "Monaco Grand Prix": "모나코 그랑프리",
   "Canadian Grand Prix": "캐나다 그랑프리",
+  // 2026 부터 스페인에서 두 번 달려요. 스페인 그랑프리라는 이름은 마드리드로 넘어갔고
+  // 바르셀로나는 별도 경기가 됐습니다. 둘 다 country_name 은 Spain 이라 이름으로만 갈립니다.
+  "Barcelona Grand Prix": "바르셀로나 그랑프리",
   "Spanish Grand Prix": "스페인 그랑프리",
   "Austrian Grand Prix": "오스트리아 그랑프리",
   "British Grand Prix": "영국 그랑프리",
@@ -144,12 +169,14 @@ function contrastIconColor(hex) {
   const g = parseInt(clean.slice(2, 4), 16);
   const b = parseInt(clean.slice(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? ASPHALT : "#FFFFFF";
+  return luminance > 0.6 ? INK : "#FFFFFF";
 }
 
-// 팀 컬러 중 일부는 어두운 배경(ASPHALT) 위에서 텍스트로 쓰기엔 너무 어두워서,
+// 팀 컬러 중 일부는 어두운 배경 위에서 텍스트로 쓰기엔 너무 어두워서,
 // 명도가 낮으면 흰색 쪽으로 살짝 섞어 최소 가독성을 확보해요.
-function readableAccent(hex) {
+// 라이트 모드에서는 정반대 문제가 생겨요. 메르세데스 청록(#27F4D2)처럼 밝은 팀 컬러가
+// 흰 배경에 묻히니, 그때는 목표 명도까지 검정 쪽으로 눌러 줍니다.
+function readableAccent(hex, light = false) {
   if (!hex) return TEXT;
   const clean = hex.replace("#", "");
   if (clean.length !== 6) return hex;
@@ -157,24 +184,29 @@ function readableAccent(hex) {
   const g = parseInt(clean.slice(2, 4), 16);
   const b = parseInt(clean.slice(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const toHex = (v) => Math.round(v).toString(16).padStart(2, "0");
+
+  if (light) {
+    if (luminance <= 0.42) return hex;
+    // 색조(hue)는 그대로 두고 밝기만 낮추려고 세 채널에 같은 비율을 곱해요.
+    const k = 0.42 / luminance;
+    return `#${toHex(r * k)}${toHex(g * k)}${toHex(b * k)}`;
+  }
+
   if (luminance >= 0.4) return hex;
   const mix = 0.55;
-  const nr = Math.round(r + (255 - r) * mix);
-  const ng = Math.round(g + (255 - g) * mix);
-  const nb = Math.round(b + (255 - b) * mix);
-  const toHex = (v) => v.toString(16).padStart(2, "0");
-  return `#${toHex(nr)}${toHex(ng)}${toHex(nb)}`;
+  return `#${toHex(r + (255 - r) * mix)}${toHex(g + (255 - g) * mix)}${toHex(b + (255 - b) * mix)}`;
 }
 
 // "(BOR)" 같은 3자리 드라이버 코드를 문장 속에서 찾아 해당 팀 컬러로 강조해요.
-function renderRaceControlText(text, colorMap) {
+function renderRaceControlText(text, colorMap, light) {
   if (!colorMap) return text;
   const parts = text.split(/\(([A-Z]{3})\)/g);
   return parts.map((part, i) => {
     if (i % 2 === 1) {
       const color = colorMap[part];
       return color ? (
-        <span key={i}>(<span style={{ color: readableAccent(color), fontWeight: 700 }}>{part}</span>)</span>
+        <span key={i}>(<span style={{ color: readableAccent(color, light), fontWeight: 700 }}>{part}</span>)</span>
       ) : (
         <span key={i}>({part})</span>
       );
@@ -248,27 +280,69 @@ function formatKoreanDate(dateStr) {
   return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
 }
 
+// 제목 위에 얹는 작은 라벨. 대문자 변환은 뺐어요 - 한글에는 아무 효과가 없어서
+// 라틴 문자가 섞인 자리만 들쭉날쭉해 보였습니다. 자간은 남겨서 작아도 읽히게 둡니다.
 function Eyebrow({ children }) {
   return (
-    <div className="uppercase tracking-widest text-xs font-semibold mb-2" style={{ color: MUTED, letterSpacing: "0.12em" }}>
+    <div className="text-xs font-semibold mb-1.5" style={{ color: MUTED, letterSpacing: "0.08em" }}>
       {children}
     </div>
   );
 }
 
-function LoadingBlock({ label }) {
+// 화면에서 제일 중요한 한 줄. 지금까지는 이 자리가 12px 라벨이었어서
+// "무엇을 보고 있는 화면인지"가 표에 묻혀 있었어요.
+// 큰 글자는 자간을 좁혀야 뭉쳐 보이지 않고, balance 로 마지막 줄에 한 단어만
+// 떨어지는 것도 막습니다.
+function PageTitle({ children }) {
   return (
-    <div className="flex items-center gap-2 py-8 justify-center text-sm" style={{ color: MUTED }}>
-      <Loader2 size={16} className="animate-spin" />
-      {label || "데이터를 불러오는 중..."}
+    <h1
+      className="text-2xl font-bold sm:text-[28px]"
+      style={{ color: TEXT, letterSpacing: "-0.02em", lineHeight: 1.2, textWrap: "balance" }}
+    >
+      {children}
+    </h1>
+  );
+}
+
+// 제목 아래에 붙는 보조 설명. 제목보다 확실히 작고 흐려야 위계가 생깁니다.
+function TitleNote({ children }) {
+  return (
+    <div className="flex items-center gap-2 mt-1.5 text-[13px]" style={{ color: MUTED }}>
+      {children}
+    </div>
+  );
+}
+
+// 스피너는 "뭔가 돌고 있다"는 것 말고는 알려주는 게 없어서, 들어올 내용의 형태로
+// 자리를 미리 잡아 둡니다. 데이터가 도착해도 레이아웃이 튀지 않아요.
+// shape="block" 은 트랙맵처럼 큰 그림 한 장이 들어올 자리에 씁니다.
+function LoadingBlock({ label, shape = "rows", rows = 4 }) {
+  return (
+    <div className="px-4 py-4" role="status" aria-live="polite" aria-busy="true">
+      {/* 화면에는 스켈레톤만 보이지만 스크린리더에는 상태를 읽어 줘야 해요. */}
+      <span className="sr-only">{label || "데이터를 불러오는 중..."}</span>
+      {shape === "block" ? (
+        <div className="skeleton" style={{ height: "220px", borderRadius: "8px" }} />
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {Array.from({ length: rows }).map((_, i) => (
+            <div key={i} className="flex items-center gap-2.5">
+              <div className="skeleton shrink-0" style={{ width: "34px", height: "20px" }} />
+              {/* 줄마다 길이를 조금씩 줄여야 실제 텍스트 목록처럼 보입니다. */}
+              <div className="skeleton" style={{ height: "12px", flex: `1 1 ${92 - i * 9}%`, maxWidth: `${92 - i * 9}%` }} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 function ErrorBlock({ message }) {
   return (
-    <div className="flex items-center gap-2 py-8 justify-center text-sm" style={{ color: "#E24B4A" }}>
-      <AlertCircle size={16} />
+    <div className="flex items-center gap-2 py-8 justify-center text-sm" style={{ color: DANGER }}>
+      <WarningCircle size={16} />
       {message || "데이터를 불러오지 못했어요."}
     </div>
   );
@@ -279,7 +353,7 @@ function WeatherBar({ weather }) {
   const items = [
     { icon: Thermometer, label: "기온", value: `${weather.air_temperature}°C` },
     { icon: Thermometer, label: "노면", value: `${weather.track_temperature}°C` },
-    { icon: Droplets, label: "습도", value: `${weather.humidity}%` },
+    { icon: Drop, label: "습도", value: `${weather.humidity}%` },
     { icon: Wind, label: "풍속", value: `${weather.wind_speed}km/h` },
   ];
   return (
@@ -298,11 +372,13 @@ function WeatherBar({ weather }) {
   );
 }
 
+// 패널 제목은 본문(14px)과 같은 크기라 구분이 안 됐어요. 크기를 키우면 표가 밀리니
+// 굵기로만 한 단계 올립니다. h2 로 둬서 스크린리더가 패널을 건너뛸 수 있게 해요.
 function PanelHeader({ icon: Icon, title }) {
   return (
     <div className="flex items-center gap-1.5 px-4 py-3" style={{ borderBottom: `1px solid ${LINE}` }}>
-      <Icon size={14} color={ACCENT} />
-      <span className="text-sm font-medium" style={{ color: TEXT }}>{title}</span>
+      <Icon size={14} style={{ color: ACCENT }} />
+      <h2 className="text-sm font-semibold" style={{ color: TEXT, letterSpacing: "-0.01em" }}>{title}</h2>
     </div>
   );
 }
@@ -551,6 +627,7 @@ function positionAt(track, ms) {
 }
 
 function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year, safetyCarEvents, resultsLoading }) {
+  const isLight = useIsLight();
   const [laps, setLaps] = useState([]);
   const [lapNumber, setLapNumber] = useState(null);
   const [outline, setOutline] = useState(null);
@@ -830,7 +907,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
   });
 
   return (
-    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
+    <div className="panel">
       <PanelHeader icon={MapPin} title="랩 리플레이" />
 
       <div className="flex items-center gap-2 px-4 py-2.5 flex-wrap" style={{ borderBottom: `1px solid ${LINE}` }}>
@@ -842,7 +919,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           aria-label="이전 랩"
           title={prevLap ? `${prevLap.lap_number}랩` : "첫 랩이에요"}
         >
-          <ChevronLeft size={15} color={prevLap ? TEXT : MUTED} />
+          <CaretLeft size={15} style={{ color: prevLap ? TEXT : MUTED }} />
         </button>
 
         <div className="relative">
@@ -853,7 +930,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             style={{ color: laps.length === 0 ? MUTED : TEXT, border: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}
           >
             {lapNumber ? `${lapNumber}랩` : "랩 선택"}
-            <ChevronDown size={14} />
+            <CaretDown size={14} />
           </button>
           {lapOpen && (
             <div className="absolute left-0 mt-1 w-40 rounded-md overflow-hidden z-10 max-h-64 overflow-y-auto" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
@@ -869,7 +946,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
                     {safetyCarLaps.has(l.lap_number) && (
                       <span
                         className="rounded-sm px-1 text-[9px] font-bold"
-                        style={{ backgroundColor: SAFETY_YELLOW, color: ASPHALT }}
+                        style={{ backgroundColor: SAFETY_YELLOW, color: INK }}
                         title="세이프티카 구간"
                       >
                         SC
@@ -893,7 +970,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           aria-label="다음 랩"
           title={nextLap ? `${nextLap.lap_number}랩` : "마지막 랩이에요"}
         >
-          <ChevronRight size={15} color={nextLap ? TEXT : MUTED} />
+          <CaretRight size={15} style={{ color: nextLap ? TEXT : MUTED }} />
         </button>
 
         <button
@@ -906,9 +983,11 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           style={{ width: "32px", height: "32px", border: `1px solid ${LINE}`, backgroundColor: SURFACE_2, opacity: ready ? 1 : 0.4 }}
           aria-label={playing ? "일시정지" : "재생"}
         >
+          {/* Phosphor 는 채움을 fill 속성이 아니라 weight 로 정합니다. 색은 currentColor 라
+              style 의 color 를 그대로 따라와요. */}
           {playing
-            ? <Pause size={13} color={ACCENT} fill={ACCENT} />
-            : <Play size={13} color={ACCENT} fill={ACCENT} />}
+            ? <Pause size={13} weight="fill" style={{ color: ACCENT }} />
+            : <Play size={13} weight="fill" style={{ color: ACCENT }} />}
         </button>
 
         <div className="relative shrink-0">
@@ -925,7 +1004,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
             aria-label={`재생 속도 ${speed}배속`}
           >
             {speed}×
-            <ChevronDown size={14} />
+            <CaretDown size={14} />
           </button>
           {speedOpen && (
             <div className="absolute left-0 mt-1 w-24 rounded-md overflow-hidden z-10" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
@@ -970,16 +1049,16 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
       ) : !error && !leaderNumber ? (
         // 순위표가 아직 안 왔을 뿐인데 "쓸 수 없다"고 하면 안 되니 로딩과 구분해요.
         resultsLoading
-          ? <LoadingBlock label="트랙 좌표를 불러오는 중..." />
+          ? <LoadingBlock label="트랙 좌표를 불러오는 중..." shape="block" />
           : <div className="px-4 py-8 text-sm text-center" style={{ color: MUTED }}>이 세션은 좌표 데이터를 쓸 수 없어요.</div>
-      ) : !error && !outline ? <LoadingBlock label="트랙 좌표를 불러오는 중..." /> : !error && (
+      ) : !error && !outline ? <LoadingBlock label="트랙 좌표를 불러오는 중..." shape="block" /> : !error && (
         <div className="p-4 relative">
           {activeSafetyCar && (
             <div
               className="absolute left-4 top-4 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold"
-              style={{ backgroundColor: SAFETY_YELLOW, color: ASPHALT }}
+              style={{ backgroundColor: SAFETY_YELLOW, color: INK }}
             >
-              <AlertCircle size={12} />
+              <WarningCircle size={12} />
               {activeSafetyCar.type === "VSC" ? "버추얼 세이프티카" : "세이프티카"}
             </div>
           )}
@@ -989,14 +1068,14 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
           <svg viewBox={`0 0 ${outline.width.toFixed(0)} ${outline.height.toFixed(0)}`} className="h-auto flex-1 basis-0 min-w-0 sm:basis-60" style={{ maxHeight: "380px" }}>
             <defs>
               <pattern id="track-checker" width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} patternUnits="userSpaceOnUse">
-                <rect width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} fill={TEXT} />
-                <rect width={CHECKER_CELL} height={CHECKER_CELL} fill={ASPHALT} />
-                <rect x={CHECKER_CELL} y={CHECKER_CELL} width={CHECKER_CELL} height={CHECKER_CELL} fill={ASPHALT} />
+                <rect width={CHECKER_CELL * 2} height={CHECKER_CELL * 2} style={{ fill: TEXT }} />
+                <rect width={CHECKER_CELL} height={CHECKER_CELL} style={{ fill: ASPHALT }} />
+                <rect x={CHECKER_CELL} y={CHECKER_CELL} width={CHECKER_CELL} height={CHECKER_CELL} style={{ fill: ASPHALT }} />
               </pattern>
             </defs>
 
-            <path d={outline.d} fill="none" stroke={LINE} strokeWidth="14" strokeLinejoin="round" strokeLinecap="round" />
-            <path d={outline.d} fill="none" stroke={SURFACE_2} strokeWidth="10" strokeLinejoin="round" strokeLinecap="round" />
+            <path d={outline.d} fill="none" strokeWidth="14" strokeLinejoin="round" strokeLinecap="round" style={{ stroke: TRACK_EDGE }} />
+            <path d={outline.d} fill="none" strokeWidth="10" strokeLinejoin="round" strokeLinecap="round" style={{ stroke: TRACK_FILL }} />
 
             {/* 코너 번호는 차량 점보다 아래에 깔아서, 겹칠 때 차가 가려지지 않게 해요. */}
             {corners.map((c) => (
@@ -1008,7 +1087,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
                 dominantBaseline="middle"
                 fontSize="7.5"
                 fontWeight="600"
-                fill={MUTED}
+                style={{ fill: MUTED }}
                 fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
               >
                 {c.key}
@@ -1028,14 +1107,14 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 
             {dots.map((p) => (
               <g key={p.num}>
-                <circle cx={p.cx} cy={p.cy} r={DOT_R} fill={p.color} stroke={ASPHALT} strokeWidth="1.5" />
+                <circle cx={p.cx} cy={p.cy} r={DOT_R} strokeWidth="1.5" style={{ fill: p.color, stroke: ASPHALT }} />
                 <text
                   x={p.cx}
                   y={p.cy - DOT_R - DOT_LABEL_GAP}
                   textAnchor="middle"
                   fontSize="10.5"
                   fontWeight="700"
-                  fill={readableAccent(p.color) || TEXT}
+                  style={{ fill: readableAccent(p.color, isLight) || TEXT }}
                   fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
                   letterSpacing="0.3"
                 >
@@ -1074,7 +1153,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
                     <span className="shrink-0 rounded-sm" style={{ width: "3px", height: "11px", backgroundColor: color }} />
                     <span
                       className="font-bold"
-                      style={{ fontSize: "11px", color: readableAccent(color) || TEXT, letterSpacing: "0.02em" }}
+                      style={{ fontSize: "11px", color: readableAccent(color, isLight) || TEXT, letterSpacing: "0.02em" }}
                     >
                       {info.code || num}
                     </span>
@@ -1087,7 +1166,7 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 
           {loadingLap && (
             <div className="flex items-center gap-2 text-xs mt-2" style={{ color: MUTED }}>
-              <Loader2 size={11} className="animate-spin" />
+              <CircleNotch size={11} className="animate-spin" />
               {lapNumber}랩 좌표를 불러오는 중... (약 1MB)
             </div>
           )}
@@ -1109,20 +1188,21 @@ function TrackMap({ sessionKey, leaderNumber, driversByNumber, circuitKey, year,
 }
 
 function RaceControlPanel({ items, loading, error, driverColors }) {
+  const isLight = useIsLight();
   return (
-    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
+    <div className="panel">
       <PanelHeader icon={Flag} title="레이스 컨트롤" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
         <div className="scroll-panel" style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>메시지가 없어요.</div>}
           {items.map((m, i) => (
             <div key={i} className="px-4 py-3 flex gap-2.5" style={{ borderBottom: i < items.length - 1 ? `1px solid ${LINE}` : "none" }}>
-              <Info size={14} color={MUTED} className="mt-0.5 shrink-0" />
+              <Info size={14} style={{ color: MUTED }} className="mt-0.5 shrink-0" />
               <div>
                 <div className="text-xs mb-1" style={{ color: MUTED }}>
                   {m.time}{m.lap ? ` · ${m.lap}랩` : ""}
                 </div>
-                <div className="text-sm" style={{ color: TEXT }}>{renderRaceControlText(m.text, driverColors)}</div>
+                <div className="text-sm" style={{ color: TEXT }}>{renderRaceControlText(m.text, driverColors, isLight)}</div>
               </div>
             </div>
           ))}
@@ -1134,7 +1214,7 @@ function RaceControlPanel({ items, loading, error, driverColors }) {
 
 function PitStopsPanel({ items, loading, error }) {
   return (
-    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
+    <div className="panel">
       <PanelHeader icon={Timer} title="피트 스탑" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
         <div className="scroll-panel" style={{ maxHeight: "280px", overflowY: "auto" }}>
@@ -1208,8 +1288,10 @@ function TeamRadioPanel({ items, loading, error }) {
   }
 
   return (
-    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
-      <PanelHeader icon={Radio} title="팀 라디오" />
+    <div className="panel">
+      {/* 팀 라디오는 드라이버와 피트월이 주고받는 교신이라, 수신기(Radio)보다
+          붐 마이크 달린 헤드셋이 그 장면에 가깝습니다. */}
+      <PanelHeader icon={Headset} title="팀 라디오" />
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
         <div className="scroll-panel" style={{ maxHeight: "280px", overflowY: "auto" }}>
           {items.length === 0 && <div className="px-4 py-4 text-sm" style={{ color: MUTED }}>이 세션엔 공개된 팀 라디오가 없어요.</div>}
@@ -1227,9 +1309,10 @@ function TeamRadioPanel({ items, loading, error }) {
                   >
                     {(() => {
                       const iconColor = r.url ? contrastIconColor(r.teamColor) : MUTED;
+                      // 오디오가 없는 행은 속을 비워서 "누를 수 없다"를 모양으로 보여줍니다.
                       return playingIdx === i
-                        ? <Pause size={12} color={iconColor} fill={iconColor} />
-                        : <Play size={12} color={iconColor} fill={r.url ? iconColor : "none"} />;
+                        ? <Pause size={12} weight="fill" style={{ color: iconColor }} />
+                        : <Play size={12} weight={r.url ? "fill" : "regular"} style={{ color: iconColor }} />;
                     })()}
                   </button>
                   {r.photo && (
@@ -1248,11 +1331,11 @@ function TeamRadioPanel({ items, loading, error }) {
                 </div>
                 {caption?.loading && (
                   <div className="flex items-center gap-1.5 text-xs pl-8 mt-2" style={{ color: MUTED }}>
-                    <Loader2 size={11} className="animate-spin" />
+                    <CircleNotch size={11} className="animate-spin" />
                     자막 만드는 중...
                   </div>
                 )}
-                {caption?.error && <div className="text-xs pl-8 mt-2" style={{ color: "#E24B4A" }}>자막을 불러오지 못했어요.</div>}
+                {caption?.error && <div className="text-xs pl-8 mt-2" style={{ color: DANGER }}>자막을 불러오지 못했어요.</div>}
                 {turns && turns.length > 0 && (
                   <div className="flex flex-col gap-1.5 pl-8 mt-2">
                     {turns.map((t, ti) => (
@@ -1284,10 +1367,13 @@ function TeamRadioPanel({ items, loading, error }) {
 // 결과표의 열 배치. 헤더와 각 행이 반드시 같은 문자열을 써야 열이 어긋나지 않아요.
 // 모바일(sm 미만)에서는 12등분 그리드가 너무 좁아서 드라이버 칸(팀 배지+코드)이
 // 간격 칸을 덮어버립니다. 그래서 폭이 필요한 만큼만 고정하고 드라이버 칸이 남는 폭을 갖게 했어요.
+// tabular-nums 는 숫자 글리프 폭을 고정해 줍니다. 순위나 랩 수가 바뀔 때
+// 자릿수가 달라져도 열이 좌우로 흔들리지 않아요. 열 정의는 그대로 둡니다.
 const RESULT_GRID =
-  "grid grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_1.75rem_2.25rem] gap-x-2 sm:grid-cols-12 sm:gap-x-0";
+  "grid grid-cols-[1.25rem_minmax(0,1fr)_4.5rem_1.75rem_2.25rem] gap-x-2 tabular-nums sm:grid-cols-12 sm:gap-x-0";
 
 function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey, sessionData }) {
+  const isLight = useIsLight();
   const [pastOpen, setPastOpen] = useState(false);
   const latestSessionKey = raceSessions.length > 0 ? raceSessions[0].session_key : null;
   const isLatest = selectedSessionKey === latestSessionKey;
@@ -1296,14 +1382,19 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
   return (
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        {/* 그랑프리 이름이 이 화면의 주어라서 제목 자리로 올렸습니다.
+            "최신 세션 결과"는 그 그랑프리의 무엇을 보고 있는지를 말하는 보조 정보라 아래로 내려요. */}
         <div>
-          <Eyebrow>{currentMeta ? koGpName(currentMeta.gpName) : "세션"}</Eyebrow>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium" style={{ color: TEXT }}>
-              {isLatest ? "최신 세션 결과" : "지난 경기 결과"}
-            </span>
-            {currentMeta && <span className="text-xs" style={{ color: MUTED }}>{formatKoreanDate(currentMeta.date_start)}</span>}
-          </div>
+          <PageTitle>{currentMeta ? koGpName(currentMeta.gpName) : "세션"}</PageTitle>
+          <TitleNote>
+            <span style={{ color: TEXT }}>{isLatest ? "최신 세션 결과" : "지난 경기 결과"}</span>
+            {currentMeta && (
+              <>
+                <span aria-hidden="true" style={{ color: LINE }}>·</span>
+                <span>{formatKoreanDate(currentMeta.date_start)}</span>
+              </>
+            )}
+          </TitleNote>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -1324,9 +1415,9 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
               className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md font-medium"
               style={{ color: MUTED, border: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}
             >
-              <History size={14} />
+              <ClockCounterClockwise size={14} />
               이전 경기들
-              <ChevronDown size={14} />
+              <CaretDown size={14} />
             </button>
 
             {pastOpen && (
@@ -1354,7 +1445,7 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
 
       <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "flex-start" }}>
         <div style={{ flex: "2 1 420px", display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
+          <div className="panel">
             <div className={`${RESULT_GRID} px-3 py-2 text-xs font-medium sm:px-4`} style={{ color: MUTED, borderBottom: `1px solid ${LINE}`, backgroundColor: SURFACE_2 }}>
               <div className="sm:col-span-1">P</div>
               <div className="sm:col-span-3">드라이버</div>
@@ -1368,7 +1459,9 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
               sessionData.rows.map((d, i) => (
                 <div key={d.code} className={`${RESULT_GRID} px-3 py-2.5 items-center text-sm sm:px-4 sm:py-3`} style={{ borderBottom: i < sessionData.rows.length - 1 ? `1px solid ${LINE}` : "none", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
                   <div className="sm:col-span-1" style={{ color: d.pos === 1 ? ACCENT : TEXT }}>{d.pos}</div>
-                  <div className="sm:col-span-3 flex items-center gap-1.5 sm:gap-2 font-bold min-w-0 text-[14px] sm:text-[15px]" style={{ color: readableAccent(d.teamColor) || TEXT, fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: "0.01em" }}>
+                  {/* 행 전체는 모노스페이스라 숫자가 잘 맞는데, 드라이버 칸만은 본문 폰트로
+                      되돌립니다(font-sans = Pretendard). 팀 배지와 코드가 모노스페이스면 좁고 딱딱해 보여요. */}
+                  <div className="sm:col-span-3 flex items-center gap-1.5 sm:gap-2 font-bold min-w-0 text-[14px] sm:text-[15px] font-sans" style={{ color: readableAccent(d.teamColor, isLight) || TEXT, letterSpacing: "0.01em" }}>
                     {d.team && (
                       <span
                         className="flex items-center justify-center rounded shrink-0 min-w-[30px] sm:min-w-[34px]"
@@ -1446,16 +1539,19 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
 function CalendarTab({ upcoming, loading, error }) {
   return (
     <div>
-      <Eyebrow>2026 Season</Eyebrow>
+      <div className="mb-6">
+        <Eyebrow>2026 시즌</Eyebrow>
+        <PageTitle>다가오는 레이스</PageTitle>
+      </div>
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
         <div className="flex flex-col gap-2">
           {upcoming.length === 0 && <div className="text-sm" style={{ color: MUTED }}>예정된 레이스 정보가 없어요.</div>}
           {upcoming.map((r) => (
             <div key={r.session_key} className="flex items-center justify-between px-4 py-4 rounded-lg" style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}>
               <div className="flex items-center gap-3">
-                <MapPin size={16} color={ACCENT} />
+                <MapPin size={16} style={{ color: ACCENT }} />
                 <div>
-                  <div className="text-sm font-medium" style={{ color: TEXT }}>{koGpName(r.gpName)}</div>
+                  <div className="text-[15px] font-semibold" style={{ color: TEXT, letterSpacing: "-0.01em" }}>{koGpName(r.gpName)}</div>
                   <div className="text-xs mt-0.5" style={{ color: MUTED }}>{r.circuit}</div>
                 </div>
               </div>
@@ -1482,20 +1578,25 @@ function BlogTab() {
   const [featured, ...rest] = POSTS;
   return (
     <div>
-      <Eyebrow>최근 글</Eyebrow>
+      <div className="mb-6">
+        <Eyebrow>블로그</Eyebrow>
+        <PageTitle>최근 글</PageTitle>
+      </div>
 
+      {/* 대표 글은 목록의 한 줄이 아니라 그 자체가 하나의 블록이라
+          제목을 목록 글(15px)보다 확실히 크게 둡니다. */}
       <div
-        className="p-6 rounded-lg mb-3"
+        className="p-6 rounded-xl mb-3"
         style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}
       >
-        <div className="text-xs font-medium mb-3" style={{ color: ACCENT }}>{featured.tag}</div>
-        <div className="text-xl font-semibold leading-snug mb-3" style={{ color: TEXT, letterSpacing: "-0.01em" }}>
+        <div className="text-xs font-semibold mb-2.5" style={{ color: ACCENT, letterSpacing: "0.04em" }}>{featured.tag}</div>
+        <h2 className="text-[22px] font-bold mb-3 sm:text-2xl" style={{ color: TEXT, letterSpacing: "-0.02em", lineHeight: 1.3, textWrap: "balance" }}>
           {featured.title}
-        </div>
+        </h2>
         <div className="text-xs" style={{ color: MUTED }}>{featured.date}</div>
       </div>
 
-      <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${LINE}` }}>
+      <div className="panel">
         {rest.map((p, i) => (
           <div
             key={p.title}
@@ -1503,8 +1604,8 @@ function BlogTab() {
             style={{ borderBottom: i < rest.length - 1 ? `1px solid ${LINE}` : "none" }}
           >
             <div>
-              <div className="text-xs font-medium mb-1" style={{ color: ACCENT }}>{p.tag}</div>
-              <div className="text-sm font-medium" style={{ color: TEXT }}>{p.title}</div>
+              <div className="text-xs font-semibold mb-1" style={{ color: ACCENT, letterSpacing: "0.04em" }}>{p.tag}</div>
+              <div className="text-[15px] font-semibold" style={{ color: TEXT, letterSpacing: "-0.01em" }}>{p.title}</div>
             </div>
             <div className="text-xs shrink-0" style={{ color: MUTED }}>{p.date}</div>
           </div>
@@ -1514,8 +1615,31 @@ function BlogTab() {
   );
 }
 
+// 첫 값은 index.html 인라인 스크립트가 이미 <html> 에 붙여 둔 걸 그대로 읽어요.
+// 여기서 다시 판단하면 스크립트와 어긋나서 한 프레임 깜빡일 수 있습니다.
+function readInitialTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
 export default function F1CosmosHome() {
   const [tab, setTab] = useState("race");
+  const [theme, setTheme] = useState(readInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem(THEME_KEY, next);
+      } catch (e) {
+        // 저장을 못 해도 이번 방문 동안은 바뀐 테마가 그대로 유지돼요.
+      }
+      return next;
+    });
+  }
 
   const [raceSessions, setRaceSessions] = useState(FALLBACK_RACE_SESSIONS);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -1732,30 +1856,47 @@ export default function F1CosmosHome() {
   }, [selectedSessionKey]);
 
   return (
-    <div className="w-full min-h-screen" style={{ backgroundColor: ASPHALT, fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    <ThemeContext.Provider value={theme}>
+    {/* 폰트는 tailwind 의 sans 스택(= Pretendard)을 그대로 상속받게 둡니다.
+        여기서 fontFamily 를 인라인으로 잡으면 앱 안쪽 전체가 그 값으로 덮여요. */}
+    <div className="w-full min-h-screen" style={{ backgroundColor: ASPHALT }}>
       <header className="flex items-center justify-between px-4 py-4 flex-wrap gap-3 sm:px-6 sm:gap-4" style={{ borderBottom: `1px solid ${LINE}` }}>
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: ACCENT }}>
             {/* 팀 개러지. 패독을 채우는 건물이에요. */}
-            <Warehouse size={16} color={ASPHALT} strokeWidth={2.5} />
+            <Garage size={16} style={{ color: ON_ACCENT }} weight="bold" />
           </div>
-          <span className="font-bold text-base tracking-wide" style={{ color: TEXT, letterSpacing: "0.02em" }}>
+          {/* 로고는 자간을 벌리면 흐물흐물해져요. 살짝 키우고 조여서 덩어리로 읽히게 둡니다.
+              헤더라 크게 갈 수는 없어서 17px 선에서 멈춥니다. */}
+          <span className="font-bold text-[17px]" style={{ color: TEXT, letterSpacing: "-0.01em" }}>
             F1 <span style={{ color: ACCENT }}>패독</span>
           </span>
         </div>
 
-        <nav className="flex items-center gap-1">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const active = tab === t.id;
-            return (
-              <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-1.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap sm:px-3.5" style={{ color: active ? ACCENT : MUTED, backgroundColor: active ? SURFACE : "transparent" }}>
-                <Icon size={15} />
-                {t.label}
-              </button>
-            );
-          })}
-        </nav>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <nav className="flex items-center gap-1">
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-1.5 px-2.5 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap sm:px-3.5" style={{ color: active ? ACCENT : MUTED, backgroundColor: active ? SURFACE : "transparent" }}>
+                  <Icon size={15} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          <button
+            onClick={toggleTheme}
+            className="flex items-center justify-center rounded-md shrink-0 transition-colors"
+            style={{ width: "32px", height: "32px", border: `1px solid ${LINE}`, backgroundColor: SURFACE_2, color: MUTED }}
+            aria-label={theme === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
+            title={theme === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
+          >
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+        </div>
       </header>
 
       <main className={`px-4 py-8 mx-auto sm:px-6 ${tab === "race" ? "max-w-6xl" : "max-w-3xl"}`}>
@@ -1772,5 +1913,6 @@ export default function F1CosmosHome() {
         본 서비스는 비공식 프로젝트이며 포뮬러 1 관련 회사와 무관합니다. 데이터 제공: OpenF1 (비공식)
       </footer>
     </div>
+    </ThemeContext.Provider>
   );
 }

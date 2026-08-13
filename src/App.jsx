@@ -68,6 +68,9 @@ const GP_NAME_KO = {
   "Emilia Romagna Grand Prix": "에밀리아로마냐 그랑프리",
   "Monaco Grand Prix": "모나코 그랑프리",
   "Canadian Grand Prix": "캐나다 그랑프리",
+  // 2026 부터 스페인에서 두 번 달려요. 스페인 그랑프리라는 이름은 마드리드로 넘어갔고
+  // 바르셀로나는 별도 경기가 됐습니다. 둘 다 country_name 은 Spain 이라 이름으로만 갈립니다.
+  "Barcelona Grand Prix": "바르셀로나 그랑프리",
   "Spanish Grand Prix": "스페인 그랑프리",
   "Austrian Grand Prix": "오스트리아 그랑프리",
   "British Grand Prix": "영국 그랑프리",

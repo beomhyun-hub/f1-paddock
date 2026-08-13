@@ -274,9 +274,35 @@ function formatKoreanDate(dateStr) {
   return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
 }
 
+// 제목 위에 얹는 작은 라벨. 대문자 변환은 뺐어요 - 한글에는 아무 효과가 없어서
+// 라틴 문자가 섞인 자리만 들쭉날쭉해 보였습니다. 자간은 남겨서 작아도 읽히게 둡니다.
 function Eyebrow({ children }) {
   return (
-    <div className="uppercase tracking-widest text-xs font-semibold mb-2" style={{ color: MUTED, letterSpacing: "0.12em" }}>
+    <div className="text-xs font-semibold mb-1.5" style={{ color: MUTED, letterSpacing: "0.08em" }}>
+      {children}
+    </div>
+  );
+}
+
+// 화면에서 제일 중요한 한 줄. 지금까지는 이 자리가 12px 라벨이었어서
+// "무엇을 보고 있는 화면인지"가 표에 묻혀 있었어요.
+// 큰 글자는 자간을 좁혀야 뭉쳐 보이지 않고, balance 로 마지막 줄에 한 단어만
+// 떨어지는 것도 막습니다.
+function PageTitle({ children }) {
+  return (
+    <h1
+      className="text-2xl font-bold sm:text-[28px]"
+      style={{ color: TEXT, letterSpacing: "-0.02em", lineHeight: 1.2, textWrap: "balance" }}
+    >
+      {children}
+    </h1>
+  );
+}
+
+// 제목 아래에 붙는 보조 설명. 제목보다 확실히 작고 흐려야 위계가 생깁니다.
+function TitleNote({ children }) {
+  return (
+    <div className="flex items-center gap-2 mt-1.5 text-[13px]" style={{ color: MUTED }}>
       {children}
     </div>
   );
@@ -340,11 +366,13 @@ function WeatherBar({ weather }) {
   );
 }
 
+// 패널 제목은 본문(14px)과 같은 크기라 구분이 안 됐어요. 크기를 키우면 표가 밀리니
+// 굵기로만 한 단계 올립니다. h2 로 둬서 스크린리더가 패널을 건너뛸 수 있게 해요.
 function PanelHeader({ icon: Icon, title }) {
   return (
     <div className="flex items-center gap-1.5 px-4 py-3" style={{ borderBottom: `1px solid ${LINE}` }}>
       <Icon size={14} style={{ color: ACCENT }} />
-      <span className="text-sm font-medium" style={{ color: TEXT }}>{title}</span>
+      <h2 className="text-sm font-semibold" style={{ color: TEXT, letterSpacing: "-0.01em" }}>{title}</h2>
     </div>
   );
 }
@@ -1344,14 +1372,19 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
   return (
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        {/* 그랑프리 이름이 이 화면의 주어라서 제목 자리로 올렸습니다.
+            "최신 세션 결과"는 그 그랑프리의 무엇을 보고 있는지를 말하는 보조 정보라 아래로 내려요. */}
         <div>
-          <Eyebrow>{currentMeta ? koGpName(currentMeta.gpName) : "세션"}</Eyebrow>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium" style={{ color: TEXT }}>
-              {isLatest ? "최신 세션 결과" : "지난 경기 결과"}
-            </span>
-            {currentMeta && <span className="text-xs" style={{ color: MUTED }}>{formatKoreanDate(currentMeta.date_start)}</span>}
-          </div>
+          <PageTitle>{currentMeta ? koGpName(currentMeta.gpName) : "세션"}</PageTitle>
+          <TitleNote>
+            <span style={{ color: TEXT }}>{isLatest ? "최신 세션 결과" : "지난 경기 결과"}</span>
+            {currentMeta && (
+              <>
+                <span aria-hidden="true" style={{ color: LINE }}>·</span>
+                <span>{formatKoreanDate(currentMeta.date_start)}</span>
+              </>
+            )}
+          </TitleNote>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -1496,7 +1529,10 @@ function RaceReviewTab({ raceSessions, selectedSessionKey, setSelectedSessionKey
 function CalendarTab({ upcoming, loading, error }) {
   return (
     <div>
-      <Eyebrow>2026 Season</Eyebrow>
+      <div className="mb-6">
+        <Eyebrow>2026 시즌</Eyebrow>
+        <PageTitle>다가오는 레이스</PageTitle>
+      </div>
       {loading ? <LoadingBlock /> : error ? <ErrorBlock message={error} /> : (
         <div className="flex flex-col gap-2">
           {upcoming.length === 0 && <div className="text-sm" style={{ color: MUTED }}>예정된 레이스 정보가 없어요.</div>}
@@ -1505,7 +1541,7 @@ function CalendarTab({ upcoming, loading, error }) {
               <div className="flex items-center gap-3">
                 <MapPin size={16} style={{ color: ACCENT }} />
                 <div>
-                  <div className="text-sm font-medium" style={{ color: TEXT }}>{koGpName(r.gpName)}</div>
+                  <div className="text-[15px] font-semibold" style={{ color: TEXT, letterSpacing: "-0.01em" }}>{koGpName(r.gpName)}</div>
                   <div className="text-xs mt-0.5" style={{ color: MUTED }}>{r.circuit}</div>
                 </div>
               </div>
@@ -1532,16 +1568,21 @@ function BlogTab() {
   const [featured, ...rest] = POSTS;
   return (
     <div>
-      <Eyebrow>최근 글</Eyebrow>
+      <div className="mb-6">
+        <Eyebrow>블로그</Eyebrow>
+        <PageTitle>최근 글</PageTitle>
+      </div>
 
+      {/* 대표 글은 목록의 한 줄이 아니라 그 자체가 하나의 블록이라
+          제목을 목록 글(15px)보다 확실히 크게 둡니다. */}
       <div
-        className="p-6 rounded-lg mb-3"
+        className="p-6 rounded-xl mb-3"
         style={{ backgroundColor: SURFACE_2, border: `1px solid ${LINE}` }}
       >
-        <div className="text-xs font-medium mb-3" style={{ color: ACCENT }}>{featured.tag}</div>
-        <div className="text-xl font-semibold leading-snug mb-3" style={{ color: TEXT, letterSpacing: "-0.01em" }}>
+        <div className="text-xs font-semibold mb-2.5" style={{ color: ACCENT, letterSpacing: "0.04em" }}>{featured.tag}</div>
+        <h2 className="text-[22px] font-bold mb-3 sm:text-2xl" style={{ color: TEXT, letterSpacing: "-0.02em", lineHeight: 1.3, textWrap: "balance" }}>
           {featured.title}
-        </div>
+        </h2>
         <div className="text-xs" style={{ color: MUTED }}>{featured.date}</div>
       </div>
 
@@ -1553,8 +1594,8 @@ function BlogTab() {
             style={{ borderBottom: i < rest.length - 1 ? `1px solid ${LINE}` : "none" }}
           >
             <div>
-              <div className="text-xs font-medium mb-1" style={{ color: ACCENT }}>{p.tag}</div>
-              <div className="text-sm font-medium" style={{ color: TEXT }}>{p.title}</div>
+              <div className="text-xs font-semibold mb-1" style={{ color: ACCENT, letterSpacing: "0.04em" }}>{p.tag}</div>
+              <div className="text-[15px] font-semibold" style={{ color: TEXT, letterSpacing: "-0.01em" }}>{p.title}</div>
             </div>
             <div className="text-xs shrink-0" style={{ color: MUTED }}>{p.date}</div>
           </div>
@@ -1815,7 +1856,9 @@ export default function F1CosmosHome() {
             {/* 팀 개러지. 패독을 채우는 건물이에요. */}
             <Warehouse size={16} style={{ color: ON_ACCENT }} strokeWidth={2.5} />
           </div>
-          <span className="font-bold text-base tracking-wide" style={{ color: TEXT, letterSpacing: "0.02em" }}>
+          {/* 로고는 자간을 벌리면 흐물흐물해져요. 살짝 키우고 조여서 덩어리로 읽히게 둡니다.
+              헤더라 크게 갈 수는 없어서 17px 선에서 멈춥니다. */}
+          <span className="font-bold text-[17px]" style={{ color: TEXT, letterSpacing: "-0.01em" }}>
             F1 <span style={{ color: ACCENT }}>패독</span>
           </span>
         </div>

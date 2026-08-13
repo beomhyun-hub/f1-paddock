@@ -1806,7 +1806,9 @@ export default function F1CosmosHome() {
 
   return (
     <ThemeContext.Provider value={theme}>
-    <div className="w-full min-h-screen" style={{ backgroundColor: ASPHALT, fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    {/* 폰트는 tailwind 의 sans 스택(= Pretendard)을 그대로 상속받게 둡니다.
+        여기서 fontFamily 를 인라인으로 잡으면 앱 안쪽 전체가 그 값으로 덮여요. */}
+    <div className="w-full min-h-screen" style={{ backgroundColor: ASPHALT }}>
       <header className="flex items-center justify-between px-4 py-4 flex-wrap gap-3 sm:px-6 sm:gap-4" style={{ borderBottom: `1px solid ${LINE}` }}>
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: ACCENT }}>
